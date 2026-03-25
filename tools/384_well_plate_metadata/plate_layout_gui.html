@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>384-Well Plate Layout Designer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;min-height:100vh}
+    input:focus{border-color:#3b82f6!important;box-shadow:0 0 0 2px rgba(59,130,246,.18)}
+    button:hover:not(:disabled){filter:brightness(.91)}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+    kbd{background:#f3f4f6;border:1px solid #d1d5db;border-radius:3px;padding:1px 5px;font-family:monospace;font-size:10px}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef} = React;
+
+const ROWS = "ABCDEFGHIJKLMNOP".split("");
+const COLS = Array.from({length:24},(_,i)=>i+1);
+const PALETTE = [
+  "#ef4444","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6",
+  "#8b5cf6","#ec4899","#14b8a6","#f59e0b","#84cc16","#6366f1",
+  "#10b981","#f43f5e","#0ea5e9","#a855f7","#d946ef","#fb923c","#4ade80","#facc15"
+];
+const makeGrid = () => Array(16).fill(null).map(()=>Array(24).fill(""));
+let _uid = 1;
+const uid = () => String(_uid++);
+
+function getColor(label,order){const i=order.indexOf(label);return i>=0?PALETTE[i%PALETTE.length]:"#d1d5db";}
+function textColor(hex){
+  if(!hex||hex==="#d1d5db")return"#374151";
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return(r*299+g*587+b*114)/1000<135?"#fff":"#1f2937";
+}
+function dlBlob(blob,name){
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+function sanitize(s){return s.replace(/[^\w\-_.]/g,"_");}
+
+function Btn({type="primary",onClick,children,disabled,style={},title}){
+  const base={cursor:disabled?"default":"pointer",border:"none",borderRadius:7,fontWeight:600,fontSize:13,
+    padding:"7px 14px",opacity:disabled?.45:1,transition:"filter .15s"};
+  const v={primary:{background:"#3b82f6",color:"#fff"},success:{background:"#16a34a",color:"#fff"},
+    secondary:{background:"#f3f4f6",color:"#374151",border:"1px solid #e5e7eb"},
+    danger:{background:"#fee2e2",color:"#dc2626",border:"1px solid #fecaca"},
+    warning:{background:"#fef9c3",color:"#854d0e",border:"1px solid #fde68a"}};
+  return<button onClick={onClick} disabled={disabled} title={title} style={{...base,...(v[type]||v.primary),...style}}>{children}</button>;
+}
+function Toggle({value,onChange}){
+  return<div onClick={()=>onChange(!value)} style={{width:42,height:22,borderRadius:11,background:value?"#3b82f6":"#d1d5db",position:"relative",cursor:"pointer",transition:"background .2s",flexShrink:0}}>
+    <div style={{width:18,height:18,borderRadius:9,background:"#fff",position:"absolute",top:2,left:value?22:2,transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.3)"}}/>
+  </div>;
+}
+
+function App(){
+  // Navigation
+  const [view,setView]         = useState("home");
+  const [homeTab,setHomeTab]   = useState("entries");
+  const [entries,setEntries]   = useState([]);
+  const [editIdx,setEditIdx]   = useState(null);
+  const [previewRows,setPreviewRows] = useState([]);
+  const [toast,setToast]       = useState("");
+  const [previewTab,setPreviewTab] = useState("metadata");
+  const [viewModal,setViewModal] = useState(null); // index of entry to view, or null
+
+  // Experiment-wide info
+  const [expDate,setExpDate]   = useState("");
+  const [expName,setExpName]   = useState("");
+  const [expExtras,setExpExtras] = useState([]);
+  const [expErr,setExpErr]     = useState({});
+
+  // Editor
+  const [eTitle,setETitle]         = useState("");
+  const [grid,setGrid]             = useState(makeGrid);
+  const [labelOrder,setLabelOrder] = useState([]);
+  const [active,setActive]         = useState(null);
+  const [labelInput,setLabelInput] = useState("");
+  const [titleErr,setTitleErr]     = useState("");
+
+  // Draw mode
+  const [mode,setMode] = useState("rect");
+
+  // Drag state: refs for stable mouseup handler, state for rendering preview
+  const [dragDisp,setDragDisp] = useState({on:false,start:null,end:null});
+  const dragRef   = useRef({on:false,start:null,end:null});
+  const modeRef   = useRef(mode);
+  const activeRef = useRef(active);
+  const viewRef   = useRef(view);
+  useEffect(()=>{modeRef.current=mode;},[mode]);
+  useEffect(()=>{activeRef.current=active;},[active]);
+  useEffect(()=>{viewRef.current=view;},[view]);
+
+  // Split columns
+  const [splitOn,setSplitOn]   = useState(false);
+  const [splitCols,setSplitCols] = useState([]);
+  const [splitMap,setSplitMap]   = useState({});
+  const [newCol,setNewCol]       = useState("");
+
+  // Derived
+  const gridLabels = [...new Set(grid.flat().filter(Boolean))];
+  const allLabels  = [...new Set([...labelOrder,...gridLabels])];
+  const col        = l=>getColor(l,allLabels);
+
+  const showToast = msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
+
+  const fileBase = ()=>{
+    const d=expDate.trim(),n=expName.trim();
+    return d&&n?`${sanitize(d)}_${sanitize(n)}`:"plate";
+  };
+
+  const validateExp = ()=>{
+    const e={};
+    if(!expDate.trim())e.date="Required";
+    if(!expName.trim())e.name="Required";
+    setExpErr(e);
+    return Object.keys(e).length===0;
+  };
+
+  // Keep split map in sync with label list
+  useEffect(()=>{
+    if(!splitOn)return;
+    setSplitMap(m=>{
+      const nm={...m};
+      splitCols.forEach(c=>{
+        if(!nm[c])nm[c]={};
+        allLabels.forEach(l=>{if(!(l in nm[c]))nm[c][l]="";});
+      });
+      return nm;
+    });
+  // eslint-disable-next-line
+  },[JSON.stringify(allLabels),JSON.stringify(splitCols),splitOn]);
+
+  // Commit rectangle on global mouseup
+  useEffect(()=>{
+    const onUp=()=>{
+      const dr=dragRef.current;
+      if(dr.on){
+        const m=modeRef.current,a=activeRef.current;
+        if((m==="rect"||m==="eraser")&&dr.start&&dr.end){
+          const minR=Math.min(dr.start.r,dr.end.r),maxR=Math.max(dr.start.r,dr.end.r);
+          const minC=Math.min(dr.start.c,dr.end.c),maxC=Math.max(dr.start.c,dr.end.c);
+          setGrid(g=>{
+            const ng=g.map(r=>[...r]);
+            for(let r=minR;r<=maxR;r++)
+              for(let c=minC;c<=maxC;c++)
+                ng[r][c]=m==="eraser"?"":(a??"");
+            return ng;
+          });
+        }
+        dragRef.current={on:false,start:null,end:null};
+        setDragDisp({on:false,start:null,end:null});
+      }
+    };
+    window.addEventListener("mouseup",onUp);
+    return()=>window.removeEventListener("mouseup",onUp);
+  },[]);
+
+  // Ctrl+V paste — skips input/textarea elements to avoid interfering with split-map typing
+  useEffect(()=>{
+    const onPaste=e=>{
+      if(viewRef.current!=="edit")return;
+      // Only process paste when NOT focused on a form element
+      const tag=(e.target?.tagName||"").toLowerCase();
+      if(tag==="input"||tag==="textarea"||tag==="select")return;
+
+      const text=e.clipboardData.getData("text");
+      if(!text.trim())return;
+      const rawRows=text.trim().split(/\r?\n/).map(r=>r.split("\t"));
+      if(!rawRows.length)return;
+
+      // Detect row labels STRICTLY: first column must be exactly A,B,C,...,P in order.
+      // This prevents data values like "A","A","A"... from being mistaken for row headers.
+      const firstColVals=rawRows.map(r=>(r[0]||"").trim().toUpperCase());
+      const hasRowLabels=rawRows.length>=16&&ROWS.every((r,i)=>firstColVals[i]===r);
+      const colOff=hasRowLabels?1:0;
+
+      // Detect column headers STRICTLY: values must be the numeric sequence 1,2,3,...
+      // (the corner cell, if present, may be empty)
+      const hasColHeader=(()=>{
+        const cells=rawRows[0].slice(colOff).map(v=>v.trim());
+        return cells.length>=20&&cells.every((v,i)=>v===""||Number(v)===i+1);
+      })();
+      const rowOff=hasColHeader?1:0;
+      const dataRows=rawRows.slice(rowOff);
+
+      const newVals=new Set();
+      setGrid(g=>{
+        const ng=g.map(r=>[...r]);
+        dataRows.forEach((row,ri)=>{
+          if(ri>=16)return;
+          row.slice(colOff).forEach((v,ci)=>{
+            if(ci>=24)return;
+            const t=v.trim();ng[ri][ci]=t;
+            if(t)newVals.add(t);
+          });
+        });
+        return ng;
+      });
+      setLabelOrder(lo=>[...lo,...[...newVals].filter(v=>!lo.includes(v))]);
+
+      // Measure actual data dimensions and warn if they don't match 16×24
+      const nr=Math.min(dataRows.length,16);
+      const nc=Math.min(dataRows.length>0?dataRows[0].slice(colOff).length:0,24);
+      const perfect=nr===16&&nc===24;
+      setToast(perfect
+        ?`✓ Pasted 16×24 grid successfully`
+        :`⚠️ Pasted ${nr} rows × ${nc} cols — expected 16×24. ${nr<16?`Missing ${16-nr} row(s). `:""}${nc<24?`Missing ${24-nc} col(s). `:""}Unfilled wells left empty.`
+      );
+      setTimeout(()=>setToast(""),perfect?2500:7000);
+    };
+    document.addEventListener("paste",onPaste);
+    return()=>document.removeEventListener("paste",onPaste);
+  },[]);
+
+  // Cell mouse handlers
+  const handleCellDown=(e,ri,ci)=>{
+    e.preventDefault();
+    if(mode==="paint"){
+      dragRef.current={on:true,start:null,end:null};
+      setDragDisp({on:true,start:null,end:null});
+      paintOne(ri,ci);
+    }else{
+      const pt={r:ri,c:ci};
+      dragRef.current={on:true,start:pt,end:pt};
+      setDragDisp({on:true,start:pt,end:pt});
+    }
+  };
+  const handleCellEnter=(ri,ci)=>{
+    if(!dragRef.current.on)return;
+    if(mode==="paint")paintOne(ri,ci);
+    else{const pt={r:ri,c:ci};dragRef.current.end=pt;setDragDisp(d=>({...d,end:pt}));}
+  };
+  const paintOne=(ri,ci)=>{
+    setGrid(g=>{const ng=g.map(r=>[...r]);ng[ri][ci]=modeRef.current==="eraser"?"":(activeRef.current??"");return ng;});
+  };
+  const inDrag=(ri,ci)=>{
+    if(!dragDisp.on||mode==="paint")return false;
+    const{start:s,end:e}=dragDisp;
+    if(!s||!e)return false;
+    return ri>=Math.min(s.r,e.r)&&ri<=Math.max(s.r,e.r)&&ci>=Math.min(s.c,e.c)&&ci<=Math.max(s.c,e.c);
+  };
+  const fillRow=ri=>{
+    if(mode==="eraser")setGrid(g=>{const ng=g.map(r=>[...r]);ng[ri]=ng[ri].map(()=>"");return ng;});
+    else if(active)setGrid(g=>{const ng=g.map(r=>[...r]);ng[ri]=ng[ri].map(()=>active);return ng;});
+  };
+  const fillCol=ci=>{
+    if(mode==="eraser")setGrid(g=>g.map(r=>{const nr=[...r];nr[ci]="";return nr;}));
+    else if(active)setGrid(g=>g.map(r=>{const nr=[...r];nr[ci]=active;return nr;}));
+  };
+
+  // Label management
+  const addLabel=()=>{
+    const v=labelInput.trim();if(!v)return;
+    if(!labelOrder.includes(v))setLabelOrder(l=>[...l,v]);
+    setActive(v);setLabelInput("");
+  };
+  const removeLabel=l=>{
+    setLabelOrder(lo=>lo.filter(x=>x!==l));
+    if(active===l)setActive(null);
+    setGrid(g=>g.map(r=>r.map(v=>v===l?"":v)));
+    setSplitMap(m=>{const nm={...m};Object.keys(nm).forEach(c=>{delete nm[c][l];});return nm;});
+  };
+
+  // Split columns
+  const addSplitCol=()=>{
+    const n=newCol.trim();if(!n||splitCols.includes(n))return;
+    setSplitCols(c=>[...c,n]);
+    setSplitMap(m=>{const nm={...m,[n]:{}};allLabels.forEach(l=>{nm[n][l]="";});return nm;});
+    setNewCol("");
+  };
+  const removeSplitCol=n=>{
+    setSplitCols(c=>c.filter(x=>x!==n));
+    setSplitMap(m=>{const nm={...m};delete nm[n];return nm;});
+  };
+  const updSplit=(c,l,v)=>setSplitMap(m=>({...m,[c]:{...m[c],[l]:v}}));
+
+  // Entry save / edit / reset
+  const save=()=>{
+    if(!eTitle.trim()){setTitleErr("Title required");return;}
+    const entry={title:eTitle.trim(),grid:grid.map(r=>[...r]),labels:[...allLabels],splitOn,splitCols:[...splitCols],splitMap:JSON.parse(JSON.stringify(splitMap))};
+    if(editIdx!==null)setEntries(e=>e.map((x,i)=>i===editIdx?entry:x));
+    else setEntries(e=>[...e,entry]);
+    reset();setView("home");
+  };
+  const reset=()=>{
+    setETitle("");setGrid(makeGrid());setLabelOrder([]);setActive(null);
+    setLabelInput("");setMode("rect");setSplitOn(false);setSplitCols([]);
+    setSplitMap({});setNewCol("");setEditIdx(null);setTitleErr("");
+    dragRef.current={on:false,start:null,end:null};
+    setDragDisp({on:false,start:null,end:null});
+  };
+  const startEdit=i=>{
+    const e=entries[i];
+    setETitle(e.title);setGrid(e.grid.map(r=>[...r]));
+    setLabelOrder([...e.labels]);setActive(null);
+    setSplitOn(e.splitOn);setSplitCols([...e.splitCols]);
+    setSplitMap(JSON.parse(JSON.stringify(e.splitMap)));
+    setEditIdx(i);setView("edit");
+  };
+
+  // Build full metadata dataframe
+  const buildDf=()=>{
+    const rows=[];
+    ROWS.forEach((rl,ri)=>{
+      COLS.forEach((c,ci)=>{
+        const rec={};
+        if(expName.trim())rec.experiment=expName.trim();
+        if(expDate.trim())rec.date=expDate.trim();
+        expExtras.forEach(f=>{if(f.key.trim())rec[f.key.trim()]=f.value;});
+        rec.Well=`${rl}${c}`;rec.Row=rl;rec.Column=c;
+        entries.forEach(entry=>{
+          const val=entry.grid[ri][ci];
+          if(entry.splitOn&&entry.splitCols.length>0)
+            entry.splitCols.forEach(sc=>{rec[sc]=val!==""?(entry.splitMap[sc]?.[val]??val):"";});
+          else rec[entry.title]=val;
+        });
+        rows.push(rec);
+      });
+    });
+    return rows;
+  };
+
+  // Build summary: group by all non-positional columns, count wells per unique combination
+  const buildSummary=(data)=>{
+    if(!data.length)return[];
+    const groupCols=Object.keys(data[0]).filter(c=>c!=="Well"&&c!=="Row"&&c!=="Column");
+    const order=[];
+    const groups={};
+    data.forEach(row=>{
+      const key=groupCols.map(c=>String(row[c]??"")).join("\x00");
+      if(!groups[key]){
+        const rec={};
+        groupCols.forEach(c=>rec[c]=row[c]??"");
+        rec.Wells=0;
+        groups[key]=rec;
+        order.push(key);
+      }
+      groups[key].Wells++;
+    });
+    const rows=order.map(k=>groups[k]);
+    // Total row
+    const total={};
+    groupCols.forEach((c,i)=>total[c]=i===0?"TOTAL":"");
+    total.Wells=rows.reduce((s,r)=>s+r.Wells,0);
+    rows.push(total);
+    return rows;
+  };
+
+  // Export XLSX
+  const exportXLSX=()=>{
+    if(!validateExp()){setHomeTab("experiment");setView("home");showToast("⚠️ Fill Date + Experiment Name first (Experiment Info tab)");return;}
+    const data=buildDf();
+    if(!data.length){alert("No plate entries yet.");return;}
+    try{
+      const wb=XLSX.utils.book_new();
+      const ws1=XLSX.utils.json_to_sheet(data);
+      const hs=Object.keys(data[0]);
+      ws1["!cols"]=hs.map(k=>({wch:Math.max(k.length+2,10)}));
+      XLSX.utils.book_append_sheet(wb,ws1,"metadata");
+      // Summary sheet
+      const sumData=buildSummary(data);
+      if(sumData.length){
+        const ws2=XLSX.utils.json_to_sheet(sumData);
+        const sh=Object.keys(sumData[0]);
+        ws2["!cols"]=sh.map(k=>({wch:Math.max(k.length+2,10)}));
+        XLSX.utils.book_append_sheet(wb,ws2,"summary");
+      }
+      entries.forEach(entry=>{
+        const aoa=[["", ...COLS],...ROWS.map((rl,ri)=>[rl,...entry.grid[ri]])];
+        const ws=XLSX.utils.aoa_to_sheet(aoa);
+        ws["!cols"]=[{wch:3},...COLS.map(()=>({wch:9}))];
+        XLSX.utils.book_append_sheet(wb,ws,entry.title.replace(/[:\\/\[\]*?]/g,"_").slice(0,31));
+      });
+      const session={version:2,expDate,expName,expExtras,entries};
+      const wsS=XLSX.utils.aoa_to_sheet([["session_json"],[JSON.stringify(session)]]);
+      XLSX.utils.book_append_sheet(wb,wsS,"_session");
+      const out=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+      dlBlob(new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`${fileBase()}_metadata.xlsx`);
+    }catch(err){alert("Export error: "+err.message);console.error(err);}
+  };
+
+  const exportCSV=()=>{
+    if(!validateExp()){setHomeTab("experiment");setView("home");showToast("⚠️ Fill Date + Experiment Name first");return;}
+    const data=buildDf();
+    if(!data.length){alert("No data yet.");return;}
+    const hs=Object.keys(data[0]);
+    const esc=v=>{const s=String(v??"");return s.includes(",")||s.includes('"')||s.includes("\n")?`"${s.replace(/"/g,'""')}"`:`${s}`;};
+    const csv=[hs.map(esc).join(","),...data.map(r=>hs.map(h=>esc(r[h])).join(","))].join("\n");
+    dlBlob(new Blob([csv],{type:"text/csv"}),`${fileBase()}_metadata.csv`);
+  };
+
+  const saveSession=()=>{
+    const session={version:2,expDate,expName,expExtras,entries};
+    dlBlob(new Blob([JSON.stringify(session,null,2)],{type:"application/json"}),`${fileBase()}_session.json`);
+  };
+  const loadSession=()=>{
+    const inp=document.createElement("input");inp.type="file";inp.accept=".json,.xlsx";
+    inp.onchange=e=>{
+      const file=e.target.files[0];if(!file)return;
+      const reader=new FileReader();
+      const apply=data=>{
+        if(Array.isArray(data)){setEntries(data);showToast("✓ Entries loaded");}
+        else if(data&&(data.version||data.entries)){
+          if(data.expDate!==undefined)setExpDate(data.expDate);
+          if(data.expName!==undefined)setExpName(data.expName);
+          if(data.expExtras!==undefined)setExpExtras(data.expExtras);
+          if(data.entries)setEntries(data.entries);
+          showToast("✓ Session loaded");
+        }else alert("Unrecognised session format.");
+      };
+      if(file.name.endsWith(".xlsx")){
+        reader.onload=ev=>{
+          try{
+            const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
+            const ws=wb.Sheets["_session"];
+            if(!ws){alert("No session data in this Excel file.");return;}
+            const aoa=XLSX.utils.sheet_to_json(ws,{header:1});
+            const json=aoa[1]?.[0];if(!json){alert("Session sheet empty.");return;}
+            apply(JSON.parse(json));
+          }catch(err){alert("Failed: "+err.message);}
+        };
+        reader.readAsArrayBuffer(file);
+      }else{
+        reader.onload=ev=>{try{apply(JSON.parse(ev.target.result));}catch(err){alert("Failed: "+err.message);}};
+        reader.readAsText(file);
+      }
+    };
+    inp.click();
+  };
+
+  const openPreview=()=>{setPreviewRows(buildDf());setView("preview");};
+  const expInfoComplete=expDate.trim()&&expName.trim();
+
+  // ════════ ENTRY VIEW MODAL ══════════════════════════════════════════════════
+  if(viewModal!==null){
+    const e=entries[viewModal];
+    if(!e){setViewModal(null);}
+    else return(
+      <div onClick={()=>setViewModal(null)}
+        style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:"center",
+          justifyContent:"center",zIndex:999,padding:20}}>
+        <div onClick={ev=>ev.stopPropagation()}
+          style={{background:"#fff",borderRadius:14,boxShadow:"0 8px 40px rgba(0,0,0,.25)",
+            maxWidth:980,width:"100%",maxHeight:"92vh",overflow:"auto",padding:"24px 28px"}}>
+          {/* Header */}
+          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
+            <div>
+              <h2 style={{margin:0,fontSize:18,fontWeight:700,color:"#1e3a5f"}}>{e.title}</h2>
+              {e.splitOn&&<span style={{fontSize:11,background:"#eff6ff",color:"#3b82f6",padding:"2px 8px",borderRadius:99,fontWeight:600,marginTop:4,display:"inline-block"}}>split → {e.splitCols.join(", ")}</span>}
+              <div style={{marginTop:6,display:"flex",flexWrap:"wrap",gap:5}}>
+                {e.labels.map(l=><span key={l} style={{background:getColor(l,e.labels),color:textColor(getColor(l,e.labels)),padding:"2px 9px",borderRadius:99,fontSize:11,fontWeight:600}}>{l}</span>)}
+              </div>
+            </div>
+            <button onClick={()=>setViewModal(null)}
+              style={{background:"#f3f4f6",border:"none",borderRadius:7,cursor:"pointer",
+                padding:"6px 12px",fontSize:15,fontWeight:700,color:"#374151",flexShrink:0,marginLeft:12}}>✕ Close</button>
+          </div>
+          {/* Mini plate grid */}
+          <div style={{overflowX:"auto"}}>
+            <table style={{borderCollapse:"collapse",fontSize:10}}>
+              <thead>
+                <tr>
+                  <th style={{width:20}}/>
+                  {COLS.map(c=><th key={c} style={{width:26,textAlign:"center",padding:"2px 0",color:"#9ca3af",fontWeight:600}}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {ROWS.map((r,ri)=>(
+                  <tr key={r}>
+                    <td style={{padding:"1px 4px",fontWeight:700,color:"#9ca3af",textAlign:"right",fontSize:10}}>{r}</td>
+                    {COLS.map((_,ci)=>{
+                      const lbl=e.grid[ri][ci];
+                      const bg=lbl?getColor(lbl,e.labels):"#f1f5f9";
+                      return<td key={ci} style={{width:26,height:22,background:bg,border:"1px solid #fff",borderRadius:3,
+                        title:lbl||"",cursor:"default"}} title={lbl||""}/>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{marginTop:10,fontSize:11,color:"#9ca3af"}}>{e.grid.flat().filter(Boolean).length}/384 wells assigned</div>
+          {/* Split map table */}
+          {e.splitOn&&e.labels.length>0&&e.splitCols.length>0&&(
+            <div style={{marginTop:16}}>
+              <div style={{fontWeight:700,fontSize:12,color:"#374151",marginBottom:6}}>Split map</div>
+              <table style={{borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr>
+                    <th style={{padding:"4px 12px",background:"#f8fafc",border:"1px solid #e5e7eb",fontWeight:700,color:"#6b7280",textAlign:"left"}}>Label</th>
+                    {e.splitCols.map(sc=><th key={sc} style={{padding:"4px 12px",background:"#f8fafc",border:"1px solid #e5e7eb",fontWeight:700,color:"#6b7280",textAlign:"left"}}>{sc}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {e.labels.map(l=>(
+                    <tr key={l}>
+                      <td style={{padding:"4px 12px",border:"1px solid #e5e7eb",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:getColor(l,e.labels),flexShrink:0}}/>
+                        {l}
+                      </td>
+                      {e.splitCols.map(sc=>(
+                        <td key={sc} style={{padding:"4px 12px",border:"1px solid #e5e7eb",color:"#374151"}}>
+                          {(e.splitMap&&e.splitMap[sc]&&e.splitMap[sc][l])||<span style={{color:"#d1d5db"}}>—</span>}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{marginTop:18,display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn type="secondary" onClick={()=>{startEdit(viewModal);setViewModal(null);}}>✏️ Edit</Btn>
+            <Btn onClick={()=>setViewModal(null)}>Done</Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════ HOME VIEW ════════════════════════════════════════════════════════
+  if(view==="home") return(
+    <div style={{fontFamily:"system-ui,sans-serif",padding:26,maxWidth:940,margin:"0 auto"}}>
+      <div style={{marginBottom:20}}>
+        <h1 style={{fontSize:21,fontWeight:700,color:"#1e3a5f",margin:0}}>🧬 384-Well Plate Layout Designer</h1>
+        <p style={{color:"#6b7280",marginTop:4,fontSize:13}}>Define experiment info and plate entries — all combined into one metadata table.</p>
+      </div>
+
+      {/* Tab bar + action buttons */}
+      <div style={{display:"flex",alignItems:"center",borderBottom:"2px solid #e5e7eb",marginBottom:22}}>
+        {[
+          {id:"entries",   label:"📋 Plate Entries"},
+          {id:"experiment",label:"🔬 Experiment Info", warn:!expInfoComplete},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>setHomeTab(t.id)}
+            style={{padding:"9px 20px",fontWeight:600,fontSize:13,border:"none",cursor:"pointer",background:"transparent",
+              color:homeTab===t.id?"#3b82f6":"#6b7280",
+              borderBottom:homeTab===t.id?"2px solid #3b82f6":"2px solid transparent",
+              marginBottom:-2,transition:"color .15s",position:"relative"}}>
+            {t.label}
+            {t.warn&&<span style={{position:"absolute",top:7,right:5,width:7,height:7,borderRadius:"50%",background:"#ef4444"}}/>}
+          </button>
+        ))}
+        <div style={{marginLeft:"auto",display:"flex",gap:7,paddingBottom:4}}>
+          {entries.length>0&&<>
+            <Btn type="secondary" onClick={openPreview} style={{fontSize:12,padding:"5px 11px"}}>📊 Preview</Btn>
+            <Btn type="success" onClick={exportXLSX} style={{fontSize:12,padding:"5px 11px"}}>⬇ Excel</Btn>
+            <Btn type="secondary" onClick={exportCSV} style={{fontSize:12,padding:"5px 9px"}}>⬇ CSV</Btn>
+          </>}
+          {entries.length>0&&<Btn type="warning" onClick={saveSession} style={{fontSize:12,padding:"5px 11px"}}>💾 Save</Btn>}
+          <Btn type="secondary" onClick={loadSession} style={{fontSize:12,padding:"5px 11px"}}>📂 Load</Btn>
+        </div>
+      </div>
+
+      {toast&&<div style={{marginBottom:16,fontSize:13,color:"#166534",background:"#f0fdf4",border:"1px solid #bbf7d0",padding:"8px 14px",borderRadius:7}}>{toast}</div>}
+
+      {/* ── EXPERIMENT INFO TAB ── */}
+      {homeTab==="experiment"&&(
+        <div style={{maxWidth:580}}>
+          <p style={{fontSize:13,color:"#6b7280",marginBottom:18,lineHeight:1.5}}>
+            These fields apply to <strong>every well</strong> and appear as the first columns in your exported table.
+            <br/><strong style={{color:"#374151"}}>Date and Experiment Name are required</strong> before you can export.
+          </p>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+            {/* Date */}
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:expErr.date?"#dc2626":"#6b7280",letterSpacing:"0.06em",marginBottom:4}}>
+                DATE<span style={{color:"#ef4444",marginLeft:2}}>*</span>
+              </label>
+              <input value={expDate} onChange={e=>{setExpDate(e.target.value);setExpErr(er=>({...er,date:""}));}}
+                placeholder="20260101"
+                style={{width:"100%",padding:"8px 11px",border:`1.5px solid ${expErr.date?"#ef4444":"#d1d5db"}`,borderRadius:7,fontSize:14,outline:"none",color:"#1f2937"}}
+              />
+              {expErr.date&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>{expErr.date}</div>}
+            </div>
+            {/* Experiment Name */}
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:expErr.name?"#dc2626":"#6b7280",letterSpacing:"0.06em",marginBottom:4}}>
+                EXPERIMENT NAME<span style={{color:"#ef4444",marginLeft:2}}>*</span>
+              </label>
+              <input value={expName} onChange={e=>{setExpName(e.target.value);setExpErr(er=>({...er,name:""}));}}
+                placeholder="SCP01"
+                style={{width:"100%",padding:"8px 11px",border:`1.5px solid ${expErr.name?"#ef4444":"#d1d5db"}`,borderRadius:7,fontSize:14,outline:"none",color:"#1f2937"}}
+              />
+              {expErr.name&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>{expErr.name}</div>}
+            </div>
+          </div>
+
+          {expInfoComplete&&(
+            <div style={{fontSize:12,color:"#166534",background:"#f0fdf4",border:"1px solid #bbf7d0",padding:"6px 12px",borderRadius:6,marginBottom:18}}>
+              ✓ Files will be named: <code style={{fontFamily:"monospace",fontWeight:600}}>{fileBase()}_metadata.xlsx</code>
+            </div>
+          )}
+
+          <div style={{borderTop:"1px solid #e5e7eb",paddingTop:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",marginBottom:10}}>
+              ADDITIONAL FIELDS
+              <span style={{fontWeight:400,color:"#9ca3af",marginLeft:6}}>— optional, same value for all wells</span>
+            </div>
+            {expExtras.length===0&&<p style={{fontSize:12,color:"#bbb",marginBottom:10}}>No extra fields yet.</p>}
+            {expExtras.map((f,i)=>(
+              <div key={f.id} style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
+                <input value={f.key}
+                  onChange={e=>setExpExtras(ex=>ex.map((x,j)=>j===i?{...x,key:e.target.value}:x))}
+                  placeholder="Field name"
+                  style={{width:"36%",padding:"6px 10px",border:"1.5px solid #d1d5db",borderRadius:6,fontSize:13,outline:"none",color:"#1f2937"}}
+                />
+                <span style={{color:"#bbb",flexShrink:0,fontSize:13}}>:</span>
+                <input value={f.value}
+                  onChange={e=>setExpExtras(ex=>ex.map((x,j)=>j===i?{...x,value:e.target.value}:x))}
+                  placeholder="Value"
+                  style={{flex:1,padding:"6px 10px",border:"1.5px solid #d1d5db",borderRadius:6,fontSize:13,outline:"none",color:"#1f2937"}}
+                />
+                <button onClick={()=>setExpExtras(ex=>ex.filter((_,j)=>j!==i))}
+                  style={{background:"#fee2e2",border:"none",borderRadius:5,color:"#dc2626",cursor:"pointer",padding:"5px 9px",fontSize:13,fontWeight:700,flexShrink:0}}>
+                  ×
+                </button>
+              </div>
+            ))}
+            <button onClick={()=>setExpExtras(ex=>[...ex,{id:uid(),key:"",value:""}])}
+              style={{marginTop:4,background:"#f0f9ff",border:"1.5px dashed #93c5fd",borderRadius:7,color:"#3b82f6",cursor:"pointer",padding:"7px 16px",fontSize:13,fontWeight:600}}>
+              + Add Field
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── ENTRIES TAB ── */}
+      {homeTab==="entries"&&(
+        <div>
+          {!expInfoComplete&&(
+            <div style={{marginBottom:14,padding:"9px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:7,fontSize:13,color:"#92400e",display:"flex",alignItems:"center",gap:10}}>
+              ⚠️ Fill in <strong>Date</strong> and <strong>Experiment Name</strong> in the
+              <button onClick={()=>setHomeTab("experiment")} style={{background:"none",border:"none",color:"#3b82f6",cursor:"pointer",fontWeight:600,fontSize:13,padding:0,textDecoration:"underline"}}>Experiment Info tab</button>
+              before exporting.
+            </div>
+          )}
+          <div style={{marginBottom:18}}>
+            <Btn onClick={()=>{reset();setView("edit");}}>＋ Add Entry</Btn>
+          </div>
+          {entries.length===0?(
+            <div style={{textAlign:"center",padding:"48px 24px",border:"2px dashed #e5e7eb",borderRadius:12,color:"#9ca3af"}}>
+              <div style={{fontSize:34,marginBottom:8}}>🧫</div>
+              <p style={{fontSize:15,fontWeight:600}}>No entries yet</p>
+              <p style={{fontSize:13,marginTop:4}}>Click <strong>＋ Add Entry</strong> to paint your first plate layout.</p>
+            </div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {entries.map((e,i)=>(
+                <div key={i} onClick={()=>setViewModal(i)}
+                  style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,padding:"13px 18px",display:"flex",
+                    alignItems:"flex-start",justifyContent:"space-between",gap:16,
+                    boxShadow:"0 1px 4px rgba(0,0,0,.05)",cursor:"pointer",
+                    transition:"box-shadow .15s,border-color .15s"}}
+                  onMouseEnter={ev=>{ev.currentTarget.style.boxShadow="0 4px 14px rgba(59,130,246,.18)";ev.currentTarget.style.borderColor="#93c5fd";}}
+                  onMouseLeave={ev=>{ev.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,.05)";ev.currentTarget.style.borderColor="#e5e7eb";}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+                      <span style={{fontWeight:700,color:"#1f2937",fontSize:15}}>{e.title}</span>
+                      {e.splitOn&&<span style={{fontSize:11,background:"#eff6ff",color:"#3b82f6",padding:"2px 8px",borderRadius:99,fontWeight:600}}>split → {e.splitCols.join(", ")}</span>}
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:4}}>
+                      {e.labels.map(l=><span key={l} style={{background:getColor(l,e.labels),color:textColor(getColor(l,e.labels)),padding:"2px 9px",borderRadius:99,fontSize:11,fontWeight:600}}>{l}</span>)}
+                      {!e.labels.length&&<span style={{color:"#bbb",fontSize:12}}>No labels</span>}
+                    </div>
+                    <span style={{fontSize:11,color:"#9ca3af"}}>{e.grid.flat().filter(Boolean).length}/384 wells assigned</span>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexShrink:0,paddingTop:2}}>
+                    <Btn type="secondary" onClick={ev=>{ev.stopPropagation();startEdit(i);}} style={{fontSize:12,padding:"5px 12px"}}>Edit</Btn>
+                    <Btn type="danger" onClick={ev=>{ev.stopPropagation();setEntries(en=>en.filter((_,j)=>j!==i));}} style={{fontSize:12,padding:"5px 12px"}}>Delete</Btn>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  // ════════ PREVIEW VIEW ═════════════════════════════════════════════════════
+  if(view==="preview"){
+    const cols=previewRows.length?Object.keys(previewRows[0]):[];
+    const filled=previewRows.filter(r=>cols.some((c,i)=>i>=3&&r[c]!==""));
+    const sumRows=buildSummary(previewRows);
+    const sumCols=sumRows.length?Object.keys(sumRows[0]):[];
+    const totalRow=sumRows[sumRows.length-1];
+    const dataRows=sumRows.slice(0,-1);
+    const groupCount=dataRows.length;
+    const TabBtn=({id,label})=>(
+      <button onClick={()=>setPreviewTab(id)}
+        style={{padding:"9px 20px",fontWeight:600,fontSize:13,border:"none",cursor:"pointer",background:"transparent",
+          color:previewTab===id?"#3b82f6":"#6b7280",
+          borderBottom:previewTab===id?"2px solid #3b82f6":"2px solid transparent",
+          marginBottom:-2,transition:"color .15s"}}>
+        {label}
+      </button>
+    );
+    return(
+      <div style={{fontFamily:"system-ui,sans-serif",padding:24,maxWidth:1400,margin:"0 auto"}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:0}}>
+          <div>
+            <h2 style={{margin:0,fontSize:19,fontWeight:700,color:"#1e3a5f"}}>Data Preview</h2>
+            <p style={{margin:"3px 0 0",fontSize:13,color:"#6b7280"}}>{previewRows.length} wells · {filled.length} assigned · {groupCount} unique groups</p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn type="success" onClick={exportXLSX}>⬇ Excel</Btn>
+            <Btn type="secondary" onClick={exportCSV}>⬇ CSV</Btn>
+            <Btn type="secondary" onClick={()=>setView("home")}>← Back</Btn>
+          </div>
+        </div>
+
+        {/* Tab bar */}
+        <div style={{display:"flex",borderBottom:"2px solid #e5e7eb",marginTop:18,marginBottom:18}}>
+          <TabBtn id="metadata" label="📋 Metadata Table"/>
+          <TabBtn id="summary"  label="📊 Summary"/>
+        </div>
+
+        {/* Metadata table tab */}
+        {previewTab==="metadata"&&(
+          <div style={{overflowX:"auto",border:"1px solid #e5e7eb",borderRadius:8,background:"#fff"}}>
+            <table style={{borderCollapse:"collapse",fontSize:12,minWidth:"100%",whiteSpace:"nowrap"}}>
+              <thead>
+                <tr style={{background:"#f8fafc"}}>
+                  {cols.map(c=><th key={c} style={{padding:"8px 13px",textAlign:"left",borderBottom:"2px solid #e5e7eb",color:"#374151",fontWeight:700,position:"sticky",top:0,background:"#f8fafc"}}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.slice(0,80).map((row,i)=>(
+                  <tr key={i} style={{background:i%2===0?"#fff":"#f9fafb"}}>
+                    {cols.map(c=><td key={c} style={{padding:"5px 13px",borderBottom:"1px solid #f3f4f6",color:row[c]?"#1f2937":"#d1d5db",fontFamily:c==="Well"?"monospace":"inherit"}}>{String(row[c]??"")}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {previewRows.length>80&&<div style={{padding:"10px",color:"#9ca3af",fontSize:12,textAlign:"center",borderTop:"1px solid #f3f4f6"}}>Showing 80/{previewRows.length} rows — export to see all</div>}
+          </div>
+        )}
+
+        {/* Summary tab */}
+        {previewTab==="summary"&&(
+          <div>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:14}}>
+              Each row is a unique combination of conditions. <strong>Wells</strong> = number of replicates with that exact combination.
+            </p>
+            <div style={{overflowX:"auto",border:"1px solid #e5e7eb",borderRadius:8,background:"#fff"}}>
+              <table style={{borderCollapse:"collapse",fontSize:12,minWidth:"100%",whiteSpace:"nowrap"}}>
+                <thead>
+                  <tr style={{background:"#f8fafc"}}>
+                    {sumCols.map(c=><th key={c} style={{padding:"8px 13px",textAlign:c==="Wells"?"center":"left",borderBottom:"2px solid #e5e7eb",color:"#374151",fontWeight:700,position:"sticky",top:0,background:"#f8fafc"}}>{c}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dataRows.map((row,i)=>(
+                    <tr key={i} style={{background:i%2===0?"#fff":"#f9fafb"}}>
+                      {sumCols.map(c=><td key={c} style={{padding:"5px 13px",borderBottom:"1px solid #f3f4f6",
+                        color:row[c]!==""?"#1f2937":"#d1d5db",
+                        textAlign:c==="Wells"?"center":"left",
+                        fontWeight:c==="Wells"?"700":"400",
+                        fontFamily:c==="Well"?"monospace":"inherit"}}>
+                        {c==="Wells"
+                          ?<span style={{display:"inline-block",background:"#eff6ff",color:"#1d4ed8",borderRadius:99,padding:"1px 10px",fontWeight:700,fontSize:12}}>{row[c]}</span>
+                          :String(row[c]??"")}
+                      </td>)}
+                    </tr>
+                  ))}
+                  {/* Total row */}
+                  {totalRow&&(
+                    <tr style={{background:"#f1f5f9",fontWeight:700,borderTop:"2px solid #e5e7eb"}}>
+                      {sumCols.map(c=><td key={c} style={{padding:"7px 13px",color:"#1f2937",textAlign:c==="Wells"?"center":"left",fontWeight:700}}>
+                        {c==="Wells"
+                          ?<span style={{display:"inline-block",background:"#1d4ed8",color:"#fff",borderRadius:99,padding:"1px 10px",fontWeight:700,fontSize:12}}>{totalRow[c]}</span>
+                          :String(totalRow[c]??"")}
+                      </td>)}
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ════════ EDIT VIEW ════════════════════════════════════════════════════════
+  const CELL=22;
+  const labelCounts=Object.fromEntries(allLabels.map(l=>[l,grid.flat().filter(v=>v===l).length]));
+
+  return(
+    <div style={{fontFamily:"system-ui,sans-serif",padding:"13px 16px",maxWidth:1400,margin:"0 auto",userSelect:"none"}}
+>
+
+      {/* Top bar */}
+      <div style={{display:"flex",alignItems:"flex-end",gap:14,marginBottom:11,paddingBottom:11,borderBottom:"1px solid #e5e7eb",flexWrap:"wrap"}}>
+        <div>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",marginBottom:4}}>ENTRY TITLE</label>
+          <input value={eTitle}
+            onChange={e=>{setETitle(e.target.value);setTitleErr("");}}
+            placeholder="e.g. mastermix, cell_sorting…"
+            style={{padding:"7px 11px",border:`1.5px solid ${titleErr?"#ef4444":"#d1d5db"}`,borderRadius:7,fontSize:14,width:300,outline:"none",color:"#1f2937",background:"#fff"}}
+          />
+          {titleErr&&<span style={{color:"#ef4444",fontSize:11,marginLeft:6}}>{titleErr}</span>}
+        </div>
+
+        {/* Draw mode */}
+        <div>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",marginBottom:4}}>DRAW MODE</label>
+          <div style={{display:"flex",border:"1.5px solid #e5e7eb",borderRadius:7,overflow:"hidden",background:"#f9fafb"}}>
+            {[{id:"rect",icon:"▭",label:"Rectangle"},{id:"paint",icon:"✏️",label:"Free Paint"},{id:"eraser",icon:"⌫",label:"Erase Rect"}].map((m,i)=>(
+              <button key={m.id} onClick={()=>setMode(m.id)}
+                style={{padding:"6px 12px",fontSize:12,fontWeight:600,border:"none",borderLeft:i>0?"1px solid #e5e7eb":"none",cursor:"pointer",
+                  background:mode===m.id?"#3b82f6":"transparent",color:mode===m.id?"#fff":"#374151",transition:"background .13s"}}>
+                {m.icon} {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {toast&&<div style={{fontSize:12,color:"#166534",background:"#f0fdf4",border:"1px solid #bbf7d0",padding:"6px 12px",borderRadius:6,alignSelf:"flex-end"}}>{toast}</div>}
+        <div style={{display:"flex",gap:8,marginLeft:"auto",alignSelf:"flex-end"}}>
+          <Btn onClick={save}>✓ Save Entry</Btn>
+          <Btn type="secondary" onClick={()=>{reset();setView("home");}}>✕ Cancel</Btn>
+        </div>
+      </div>
+
+      <div style={{fontSize:11,color:"#9ca3af",marginBottom:9,display:"flex",gap:14,flexWrap:"wrap"}}>
+        <span>💡 <kbd>Ctrl+V</kbd> to paste 16×24 grid from Excel</span>
+        <span>• Click row/col headers to fill entire row/column</span>
+      </div>
+
+      <div style={{display:"flex",gap:18,alignItems:"flex-start"}}>
+
+        {/* Grid */}
+        <div style={{flexShrink:0}}>
+          <div style={{display:"grid",gridTemplateColumns:`22px repeat(24,${CELL}px)`,gap:1}}>
+            <div style={{fontSize:8,color:"#ccc",textAlign:"center"}}>↓</div>
+            {COLS.map(c=>(
+              <div key={`ch${c}`} onClick={()=>fillCol(c-1)} title={`Fill column ${c}`}
+                style={{textAlign:"center",fontSize:8,color:mode==="eraser"?"#dc2626":"#9ca3af",fontWeight:700,paddingBottom:2,cursor:"pointer",userSelect:"none"}}>
+                {c}
+              </div>
+            ))}
+            {ROWS.flatMap((row,ri)=>[
+              <div key={`rh${ri}`} onClick={()=>fillRow(ri)} title={`Fill row ${row}`}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:mode==="eraser"?"#dc2626":"#6b7280",cursor:"pointer",userSelect:"none"}}>
+                {row}
+              </div>,
+              ...COLS.map((_,ci)=>{
+                const val=grid[ri][ci];
+                const sel=inDrag(ri,ci);
+                let bg,border="1px solid rgba(0,0,0,.07)",showVal=val;
+                if(sel){
+                  if(mode==="eraser"){bg="#fee2e2";showVal="";border="1.5px solid #ef4444";}
+                  else if(active){bg=col(active);showVal=active;border="1.5px solid rgba(0,0,0,.2)";}
+                  else{bg="#e0f2fe";border="1.5px solid #0ea5e9";}
+                }else bg=val?col(val):"#f3f4f6";
+                const tc=textColor(bg);
+                return(
+                  <div key={`c${ri}_${ci}`}
+                    onMouseDown={e=>{e.preventDefault();handleCellDown(e,ri,ci);}}
+                    onMouseEnter={()=>handleCellEnter(ri,ci)}
+                    style={{width:CELL,height:CELL,background:bg,border,borderRadius:2,cursor:"crosshair",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontSize:6.5,color:tc,fontWeight:600,overflow:"hidden",
+                      transition:sel?"none":"background .05s",boxSizing:"border-box"}}
+                    title={`${row}${ci+1}${val?` — ${val}`:""}`}>
+                    {showVal&&showVal.length<=5?showVal:showVal?"●":""}
+                  </div>
+                );
+              }),
+            ])}
+          </div>
+        </div>
+
+        {/* Right panel */}
+        <div style={{flex:1,minWidth:240,maxWidth:340}}>
+
+          {/* Add label */}
+          <section style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:10,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",marginBottom:5}}>ADD LABEL</label>
+            <div style={{display:"flex",gap:6}}>
+              <input value={labelInput} onChange={e=>setLabelInput(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&addLabel()}
+                placeholder="Type label, press Enter…"
+                style={{flex:1,padding:"7px 10px",border:"1.5px solid #d1d5db",borderRadius:7,fontSize:13,outline:"none",color:"#1f2937"}}
+              />
+              <Btn onClick={addLabel} style={{padding:"7px 12px"}}>Add</Btn>
+            </div>
+          </section>
+
+          {/* Label palette */}
+          <section style={{marginBottom:14}}>
+            <label style={{display:"block",fontSize:10,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",marginBottom:5}}>LABELS — click to activate</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:7}}>
+              {!allLabels.length&&<span style={{color:"#bbb",fontSize:12}}>None yet</span>}
+              {allLabels.map(l=>{
+                const bg=col(l),tc=textColor(bg),isAct=active===l;
+                return(
+                  <div key={l} style={{display:"flex",alignItems:"center"}}>
+                    <div onClick={()=>setActive(active===l?null:l)}
+                      style={{padding:"4px 10px",borderRadius:"99px 0 0 99px",fontSize:12,cursor:"pointer",
+                        background:bg,color:tc,border:`2px solid ${isAct?"rgba(0,0,0,.3)":"transparent"}`,borderRight:"none",fontWeight:600}}>
+                      {l}
+                    </div>
+                    <button onClick={()=>removeLabel(l)}
+                      style={{background:bg,border:`2px solid ${isAct?"rgba(0,0,0,.3)":"transparent"}`,borderLeft:"1px solid rgba(0,0,0,.1)",
+                        color:tc,cursor:"pointer",fontSize:13,padding:"4px 6px 4px 4px",borderRadius:"0 99px 99px 0",lineHeight:1,fontWeight:700,opacity:.7}}>
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {active&&mode!=="eraser"&&<div style={{fontSize:12,color:"#166534",background:"#f0fdf4",border:"1px solid #bbf7d0",padding:"5px 10px",borderRadius:6}}>✏️ Painting: <strong>{active}</strong></div>}
+            {mode==="eraser"&&<div style={{fontSize:12,color:"#991b1b",background:"#fef2f2",border:"1px solid #fecaca",padding:"5px 10px",borderRadius:6}}>⌫ Erase — drag a rectangle</div>}
+            {!active&&mode!=="eraser"&&<span style={{fontSize:12,color:"#aaa"}}>← Click a label to select it</span>}
+          </section>
+
+          {/* Quick actions */}
+          <section style={{marginBottom:14,display:"flex",gap:7}}>
+            <Btn type="secondary" disabled={!active} style={{flex:1,fontSize:12}} onClick={()=>{if(active)setGrid(g=>g.map(r=>r.map(v=>v===""?active:v)));}} >Fill Empty</Btn>
+            <Btn type="secondary" disabled={!active} style={{flex:1,fontSize:12}} onClick={()=>{if(active)setGrid(g=>g.map(r=>r.map(()=>active)));}} >Fill All</Btn>
+            <Btn type="danger" style={{flex:1,fontSize:12}} onClick={()=>setGrid(makeGrid())}>Clear All</Btn>
+          </section>
+
+          {/* Well counts */}
+          {allLabels.length>0&&(
+            <section style={{marginBottom:14,padding:"10px 12px",background:"#f9fafb",borderRadius:8,border:"1px solid #f0f0f0"}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",letterSpacing:"0.06em",marginBottom:5}}>WELL COUNT</div>
+              {allLabels.map(l=>(
+                <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{width:9,height:9,borderRadius:2,background:col(l),display:"inline-block",flexShrink:0}}/>
+                    <span style={{fontSize:12,color:"#374151"}}>{l}</span>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:700,color:"#1f2937"}}>{labelCounts[l]}</span>
+                </div>
+              ))}
+              <div style={{borderTop:"1px solid #e5e7eb",marginTop:5,paddingTop:5,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:12,color:"#9ca3af"}}>Empty</span>
+                <span style={{fontSize:12,fontWeight:700,color:"#9ca3af"}}>{grid.flat().filter(v=>!v).length}</span>
+              </div>
+            </section>
+          )}
+
+          {/* Split columns */}
+          <section style={{border:"1px solid #e5e7eb",borderRadius:10,overflow:"hidden"}}>
+            <div onClick={()=>setSplitOn(!splitOn)}
+              style={{padding:"10px 14px",background:splitOn?"#eff6ff":"#f9fafb",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+              <div>
+                <span style={{fontSize:13,fontWeight:700,color:"#374151"}}>Split into Multiple Columns</span>
+                <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>Map each label → separate output columns</div>
+              </div>
+              <Toggle value={splitOn} onChange={setSplitOn}/>
+            </div>
+            {splitOn&&(
+              <div style={{padding:13,borderTop:"1px solid #e5e7eb"}}>
+                <div style={{display:"flex",gap:6,marginBottom:11}}>
+                  <input value={newCol} onChange={e=>setNewCol(e.target.value)}
+                    onKeyDown={e=>e.key==="Enter"&&addSplitCol()}
+                    placeholder="New column name…"
+                    style={{flex:1,padding:"6px 10px",border:"1.5px solid #d1d5db",borderRadius:6,fontSize:12,outline:"none",color:"#1f2937"}}
+                  />
+                  <Btn onClick={addSplitCol} style={{padding:"6px 11px",fontSize:12}}>+ Col</Btn>
+                </div>
+                {splitCols.length>0&&allLabels.length>0?(
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{borderCollapse:"collapse",fontSize:12,width:"100%"}}>
+                      <thead>
+                        <tr style={{background:"#f3f4f6"}}>
+                          <th style={{padding:"6px 8px",textAlign:"left",borderBottom:"1px solid #e5e7eb",color:"#374151",fontWeight:700}}>Label</th>
+                          {splitCols.map(c=>(
+                            <th key={c} style={{padding:"6px 8px",textAlign:"left",borderBottom:"1px solid #e5e7eb",color:"#374151",fontWeight:700,whiteSpace:"nowrap"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:3}}>
+                                {c}
+                                <button onClick={()=>removeSplitCol(c)} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",fontSize:13,padding:0,lineHeight:1}}>×</button>
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allLabels.map((l,li)=>(
+                          <tr key={l} style={{background:li%2===0?"#fff":"#f9fafb"}}>
+                            <td style={{padding:"3px 8px",borderBottom:"1px solid #f3f4f6"}}>
+                              <span style={{background:col(l),color:textColor(col(l)),padding:"2px 7px",borderRadius:99,fontSize:11,fontWeight:600}}>{l}</span>
+                            </td>
+                            {splitCols.map(c=>(
+                              <td key={c} style={{padding:"2px 4px",borderBottom:"1px solid #f3f4f6"}}>
+                                <input
+                                  value={splitMap[c]?.[l]??""}
+                                  onChange={e=>updSplit(c,l,e.target.value)}
+                                  placeholder="value"
+                                  style={{width:"100%",padding:"3px 7px",border:"1px solid #e5e7eb",borderRadius:4,fontSize:12,outline:"none",color:"#1f2937",boxSizing:"border-box",background:"#fff"}}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ):(
+                  <p style={{color:"#bbb",fontSize:12,textAlign:"center",margin:"8px 0"}}>
+                    {!splitCols.length?"Add column names above ↑":"Add labels to palette first ↑"}
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>

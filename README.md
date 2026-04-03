@@ -6,14 +6,17 @@ This repository collects small, lightweight GUI tools designed to help with comm
 
 ## Available Tools
 
-### 384 Well Plate Metadata GUI
-
-A browser-based GUI for designing **384-well plate layouts** and exporting structured per-well metadata.  
-Primarily built for **single-cell proteomics LC-MS/MS workflows**, but usable for any plate-based experiment.
-
-📁 Tool location:
-
-tools/384_well_plate_metadata. For usage instructions and details, see the README in that folder.
+### Plate Layout to Metadata
+ 
+Design 384-well plate layouts and export structured per-well metadata. Built for single-cell proteomics LC-MS/MS workflows, but usable for any plate-based experiment.
+ 
+See [tools/plate_layout_to_metadata/](tools/plate_layout_to_metadata/) for details and usage.
+ 
+### Xcalibur Sequence Generator
+ 
+Generate Xcalibur LC-MS sequence files from 384-well plate metadata. Takes the output of the Plate Layout to Metadata tool as input. Supports QC bracketing, seeded randomisation, and replicate balance checking.
+ 
+See [tools/xcalibur_sequence_generator/](tools/xcalibur_sequence_generator/) for details and usage.
 
 ## Future Tools
 

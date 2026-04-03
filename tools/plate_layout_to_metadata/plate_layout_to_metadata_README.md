@@ -1,4 +1,4 @@
-# 384 Well Plate Metadata GUI
+# Plate Layout to Metadata
 
 A browser-based GUI for designing **384-well plate layouts** and exporting structured, per-well metadata — primarily built for single-cell proteomics workflows using LC-MS/MS.
 

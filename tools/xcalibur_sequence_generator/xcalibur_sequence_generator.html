@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Xcalibur Sequence Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface2: #f0f2f5;
+  --border: #d0d7de;
+  --border2: #e2e7ec;
+  --accent: #0969da;
+  --accent-light: #dbeafe;
+  --green: #1a7f37;
+  --green-light: #dcfce7;
+  --green-border: #a7f3c0;
+  --purple: #7c3aed;
+  --purple-light: #ede9fe;
+  --text: #1f2328;
+  --text-mid: #444c56;
+  --text-muted: #6e7781;
+  --fin-bg: #d1fadf; --fin-bd: #a7f3c0; --fin-tx: #1a7f37;
+  --unf-bg: #f6f8fa; --unf-bd: #d0d7de; --unf-tx: #8c959f;
+  --sel-bg: #cfe0fc; --sel-bd: #0969da;
+  --font-mono: 'Consolas','JetBrains Mono',monospace;
+  --font-ui: 'Segoe UI',system-ui,-apple-system,sans-serif;
+  --hdr: 52px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-ui);
+  height: 100vh; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+
+/* ── HEADER ── */
+header {
+  height: var(--hdr); flex-shrink: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 18px; display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07); z-index: 200;
+}
+header h1 { font-size:15px; font-weight:700; color:var(--accent); font-family:var(--font-mono); }
+.badge { font-size:10px; font-weight:700; background:var(--accent-light); color:var(--accent); padding:2px 8px; border-radius:20px; }
+.hdr-right { margin-left:auto; display:flex; gap:6px; align-items:center; }
+
+/* ── LAYOUT ── */
+.layout {
+  display: grid;
+  grid-template-columns: 370px 1fr;
+  flex: 1; min-height: 0; overflow: hidden;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
+}
+.sec { border-bottom: 1px solid var(--border2); flex-shrink: 0; }
+.sec-btn {
+  width:100%; background:none; border:none; cursor:pointer;
+  padding:10px 15px; display:flex; align-items:center; gap:8px;
+  font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--text-mid); text-align:left; transition:background .1s;
+}
+.sec-btn:hover { background:var(--surface2); }
+.sec-btn .arr { margin-left:auto; font-size:10px; transition:transform .2s; color:var(--text-muted); }
+.sec-btn.closed .arr { transform:rotate(-90deg); }
+.sec-body { padding:12px 15px 15px; }
+.sec-body.hidden { display:none; }
+
+/* ── CONTENT ── */
+.content {
+  overflow-y: auto; overflow-x: hidden;
+  padding: 16px; display: flex; flex-direction: column; gap: 16px;
+  background: var(--bg);
+}
+
+/* ── CARDS ── */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden; flex-shrink:0; }
+.card-h {
+  background:var(--surface2); border-bottom:1px solid var(--border);
+  padding:8px 14px; font-size:11px; font-weight:700; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--text-mid); display:flex; align-items:center; gap:8px;
+}
+.card-b { padding:14px; }
+
+/* ── FORMS ── */
+label { display:block; font-size:11px; font-weight:600; color:var(--text-mid); margin-bottom:3px; }
+input[type=text], input[type=number], select {
+  width:100%; background:var(--surface); border:1px solid var(--border);
+  color:var(--text); padding:6px 9px; border-radius:6px; font-size:12px;
+  font-family:var(--font-mono); outline:none; transition:border-color .15s, box-shadow .15s;
+}
+input:focus, select:focus {
+  border-color:var(--accent); box-shadow:0 0 0 3px rgba(9,105,218,.1);
+}
+.fr { margin-bottom:8px; }
+.fr:last-child { margin-bottom:0; }
+.g2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+
+/* ── BUTTONS ── */
+.btn {
+  display:inline-flex; align-items:center; gap:5px;
+  padding:6px 13px; border-radius:6px; font-size:12px; font-weight:600;
+  cursor:pointer; border:1px solid transparent; transition:all .14s;
+  font-family:var(--font-ui); white-space:nowrap; line-height:1;
+}
+.btn-p { background:var(--accent); color:#fff; border-color:var(--accent); }
+.btn-p:hover { background:#0758b0; }
+.btn-g { background:var(--green); color:#fff; border-color:var(--green); }
+.btn-g:hover { background:#145d2b; }
+.btn-o { background:var(--surface); color:var(--text-mid); border-color:var(--border); }
+.btn-o:hover { background:var(--surface2); color:var(--text); border-color:#aaa; }
+.btn-sm { padding:4px 9px; font-size:11px; }
+
+/* ── UPLOAD ── */
+.upzone {
+  border:2px dashed var(--border); border-radius:8px; padding:16px;
+  text-align:center; cursor:pointer; transition:all .18s; background:var(--surface2);
+}
+.upzone:hover,.upzone.over { border-color:var(--accent); background:var(--accent-light); }
+.upzone .ico { font-size:24px; margin-bottom:5px; }
+.upzone strong { font-size:13px; color:var(--text); display:block; margin-bottom:2px; }
+.upzone .hint { font-size:11px; color:var(--text-muted); }
+.fileinfo {
+  display:flex; align-items:center; gap:6px; font-size:11px; color:var(--green);
+  background:var(--fin-bg); border:1px solid var(--fin-bd); border-radius:6px;
+  padding:6px 10px; margin-top:8px; font-family:var(--font-mono);
+}
+
+/* ── COLUMN MAPPER ── */
+.mapper { background:#fffbea; border:1px solid #f0d060; border-radius:7px; padding:11px; margin-top:10px; }
+.mapper h4 { font-size:11px; color:#7c5e00; margin-bottom:8px; font-weight:700; }
+
+/* ── QC ITEMS ── */
+.qci { background:var(--surface2); border:1px solid var(--border2); border-radius:7px; padding:11px; }
+.qci-h { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+.bt { font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; letter-spacing:.04em; }
+.bt-bl { background:var(--purple-light); color:var(--purple); }
+.bt-bs { background:var(--green-light);  color:var(--green);  }
+.bt-he { background:#fef3c7; color:#92400e; }
+
+/* ── PLATE ── */
+.plate-outer {
+  overflow:auto; position:relative; user-select:none;
+  border:1px solid var(--border); border-radius:6px; background:var(--surface2);
+  padding:4px;
+}
+.plate-grid { display:inline-grid; gap:2px; position:relative; }
+.pc {
+  width:26px; height:26px; border-radius:50%; cursor:pointer;
+  border:1.5px solid transparent; font-size:8px;
+  display:flex; align-items:center; justify-content:center;
+  transition:transform .07s; font-family:var(--font-mono);
+  position:relative; user-select:none;
+}
+.pc.hdr { background:transparent; border:none; cursor:default; font-size:10px; color:var(--text-muted); font-weight:700; border-radius:4px; }
+.pc.unf { background:var(--unf-bg); border-color:var(--unf-bd); color:var(--unf-tx); }
+.pc.fin { background:var(--fin-bg); border-color:var(--fin-bd); color:var(--fin-tx); }
+.pc.sel { background:var(--sel-bg); border-color:var(--sel-bd); color:var(--accent); }
+.pc.fin.sel { background:#b3d8ff; border-color:var(--accent); }
+.pc.empty { opacity:.15; pointer-events:none; }
+.pc:not(.hdr):not(.empty):hover { transform:scale(1.18); z-index:5; }
+
+#rsel {
+  position:absolute; border:2px solid var(--accent);
+  background:rgba(9,105,218,.1); pointer-events:none; display:none; z-index:50;
+  border-radius:3px;
+}
+
+/* ── TOOLBAR ── */
+.toolbar { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; align-items:center; }
+.toolbar span { font-size:10px; color:var(--text-muted); margin-left:3px; }
+
+/* ── LEGEND ── */
+.legend { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; margin-bottom:8px; }
+.leg { display:flex; align-items:center; gap:4px; color:var(--text-muted); }
+.leg-dot { width:12px; height:12px; border-radius:50%; border:1.5px solid; flex-shrink:0; }
+
+/* ── STATS ── */
+.srow { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.sc { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:6px 12px; text-align:center; min-width:80px; }
+.sc .v { font-size:20px; font-weight:700; font-family:var(--font-mono); }
+.sc .l { font-size:10px; color:var(--text-muted); margin-top:1px; }
+
+/* ── TABS ── */
+.tabs { display:flex; border-bottom:1px solid var(--border); background:var(--surface2); }
+.tab { padding:8px 18px; font-size:12px; font-weight:600; cursor:pointer;
+  border-bottom:2px solid transparent; color:var(--text-muted); transition:all .12s; }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); background:var(--surface); }
+.tab:hover:not(.active) { color:var(--text); background:rgba(0,0,0,.02); }
+.tp { display:none; padding:14px; }
+.tp.active { display:block; }
+
+/* ── SEQ TABLE ── */
+.swrap { overflow-x:scroll; font-family:var(--font-mono); font-size:11px; max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; }
+.stbl { width:100%; border-collapse:collapse; min-width:660px; }
+.stbl th {
+  background:var(--surface2); padding:6px 10px; text-align:left;
+  font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--text-muted); border-bottom:2px solid var(--border);
+  font-weight:700; white-space:nowrap; position:sticky; top:0; z-index:5;
+}
+.stbl td { padding:4px 10px; border-bottom:1px solid var(--border2); white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; }
+.stbl tr:hover td { background:var(--surface2); }
+.t-bl td:nth-child(2) { color:var(--purple); font-weight:600; }
+.t-qc td:nth-child(2) { color:var(--green);  font-weight:600; }
+.t-un td:nth-child(2) { color:var(--text-mid); }
+.rn { color:var(--text-muted); width:28px; font-size:10px; }
+code { font-family:var(--font-mono); font-size:10px; color:var(--accent); background:var(--accent-light); padding:1px 5px; border-radius:4px; }
+
+/* ── INFO ── */
+.ibox { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font-size:12px; color:var(--text-muted); line-height:1.6; }
+.ibox strong { color:var(--text); }
+
+/* ── TOAST ── */
+#toast {
+  position:fixed; bottom:16px; right:16px; border-radius:8px;
+  padding:9px 16px; font-size:13px; display:none; z-index:9999;
+  max-width:320px; box-shadow:0 6px 20px rgba(0,0,0,.18); gap:8px; align-items:center;
+}
+#toast.show { display:flex; }
+#toast.ok  { background:#1a7f37; color:#fff; }
+#toast.err { background:#cf222e; color:#fff; }
+#toast.inf { background:#0969da; color:#fff; }
+
+input[type=file] { display:none; }
+hr.div { border:none; border-top:1px solid var(--border2); margin:8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚗ Xcalibur Sequence Generator</h1>
+  <span class="badge">LCMS · SCP · Orbitrap Astral</span>
+  <div class="hdr-right">
+    <button class="btn btn-o" onclick="saveSession()">💾 Save Session</button>
+    <button class="btn btn-o" onclick="document.getElementById('sfile').click()">📂 Load Session</button>
+    <input type="file" id="sfile" accept=".json" onchange="loadSession(this)">
+    <button class="btn btn-g" onclick="generateSequence()">▶ Generate</button>
+    <button class="btn btn-o" onclick="exportCSV()">⬇ CSV</button>
+    <button class="btn btn-p" onclick="exportXLSX()">⬇ XLSX</button>
+    <button class="btn btn-p" style="background:#7c3aed;border-color:#7c3aed" onclick="downloadAll()">⬇ All</button>
+  </div>
+</header>
+
+<div class="layout">
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<div class="sidebar">
+
+  <!-- 1. Metadata -->
+  <div class="sec">
+    <button class="sec-btn" onclick="toggleSec(this)">📤 Metadata File <span class="arr">▼</span></button>
+    <div class="sec-body">
+      <div class="upzone" id="dz"
+        onclick="document.getElementById('mf').click()"
+        ondragover="e=>{e.preventDefault();e.currentTarget.classList.add('over')}"
+        ondragleave="e=>e.currentTarget.classList.remove('over')"
+        ondrop="doDrop(event)">
+        <div class="ico">📊</div>
+        <strong>Drop metadata XLSX here</strong>
+        <div class="hint">From plate_layout_gui.html</div>
+      </div>
+      <input type="file" id="mf" accept=".xlsx" onchange="loadMeta(this)">
+      <div id="fi" style="display:none" class="fileinfo">✓ <span id="fn"></span></div>
+
+      <div id="mapper" class="mapper" style="display:none">
+        <h4>⚠ Map Columns (auto-detected, adjust if needed)</h4>
+        <div class="fr"><label>WELL COLUMN *</label><select id="cWell" onchange="remap()"></select></div>
+        <div class="fr"><label>PREP FINISHED COLUMN</label>
+          <select id="cPrep" onchange="remap()"><option value="">(none – select wells manually)</option></select>
+        </div>
+        <div class="fr"><label>EXPERIMENT NAME COLUMN</label>
+          <select id="cExp" onchange="remap()"><option value="">(none)</option></select>
+        </div>
+        <div class="fr"><label>DATE COLUMN</label>
+          <select id="cDate" onchange="remap()"><option value="">(none)</option></select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Run Settings -->
+  <div class="sec">
+    <button class="sec-btn" onclick="toggleSec(this)">⚙ Run Settings <span class="arr">▼</span></button>
+    <div class="sec-body">
+      <div class="fr"><label>DATA PATH (Windows)</label>
+        <input type="text" id="dataPath" value="D:\AstralData\">
+      </div>
+      <div class="fr"><label>INSTRUMENT METHOD (full path)</label>
+        <input type="text" id="instrMethod" value="C:\Xcalibur\methods\Rong_methods\IonOpticks_XT_25_75\Running_standard\RC1_Thermo_IO25cm_25min_50SPD_20Th40ms">
+      </div>
+      <div class="fr"><label>INSTRUMENT SHORT NAME (for filenames)</label>
+        <input type="text" id="instrShort" value="RC1_DIA25min" placeholder="e.g. RC1_DIA25min">
+      </div>
+      <div class="g2">
+        <div class="fr"><label>PLATE POSITION</label>
+          <select id="platePos"><option>Y</option><option>R</option><option>G</option><option>B</option></select>
+        </div>
+        <div class="fr"><label>SAMPLE INJ VOL (µL)</label>
+          <input type="number" id="injVol" value="3.5" step="0.5" min="0.1">
+        </div>
+      </div>
+      <div class="g2">
+        <div class="fr"><label>BATCH LABEL</label><input type="text" id="batchLabel" value="batch1"></div>
+        <div class="fr"><label>RUN CODE</label><input type="text" id="runCode" value="RC"></div>
+      </div>
+      <hr class="div">
+      <div class="fr"><label>EXPERIMENT NAME (override)</label>
+        <input type="text" id="expOvr" placeholder="auto from file">
+      </div>
+      <div class="fr"><label>DATE OVERRIDE (YYYYMMDD)</label>
+        <input type="text" id="dateOvr" placeholder="auto from file">
+      </div>
+      <hr class="div">
+      <div class="fr">
+        <label>LCMS METHOD TIME (min) <span style="font-weight:400;color:var(--text-muted)">— optional, for run time estimate</span></label>
+        <input type="number" id="methodTime" placeholder="e.g. 25" step="1" min="1" style="width:160px">
+      </div>
+      <div class="fr">
+        <label>RANDOMIZATION SEED <span style="font-weight:400;color:var(--text-muted)">— optional, leave blank for new random order each time</span></label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="randSeed" placeholder="e.g. 42" step="1" min="0" style="width:140px">
+          <button class="btn btn-o btn-sm" onclick="document.getElementById('randSeed').value=Math.floor(Math.random()*1e9)" title="Generate a random seed">🎲 New seed</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Blank -->
+  <div class="sec">
+    <button class="sec-btn" onclick="toggleSec(this)">🟣 Blank Sample <span class="arr">▼</span></button>
+    <div class="sec-body">
+      <div class="qci" data-key="blank">
+        <div class="qci-h"><span class="bt bt-bl">BLANK</span></div>
+        <div class="fr"><label>NAME PREFIX</label><input type="text" class="qn" value="Blank"></div>
+        <div class="fr"><label>SUFFIX / LABEL</label><input type="text" class="qs" value="RongQC_blank"></div>
+        <div class="fr"><label>PLATE POSITION</label><input type="text" class="qp" value="B:A1"></div>
+        <div class="fr"><label>INJ VOL (µL)</label><input type="number" class="qv" value="1" step="0.5" min="0.1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. BSA -->
+  <div class="sec">
+    <button class="sec-btn" onclick="toggleSec(this)">🟢 BSA QC <span class="arr">▼</span></button>
+    <div class="sec-body">
+      <div class="qci" data-key="bsa">
+        <div class="qci-h"><span class="bt bt-bs">BSA QC</span></div>
+        <div class="fr"><label>NAME PREFIX</label><input type="text" class="qn" value="BSAQC"></div>
+        <div class="fr"><label>SUFFIX / LABEL</label><input type="text" class="qs" value="RongQC_BSA5fmol"></div>
+        <div class="fr"><label>PLATE POSITION</label><input type="text" class="qp" value="B:A2"></div>
+        <div class="fr"><label>INJ VOL (µL)</label><input type="number" class="qv" value="1" step="0.5" min="0.1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. HeLa -->
+  <div class="sec">
+    <button class="sec-btn" onclick="toggleSec(this)">🟡 HeLa QC <span class="arr">▼</span></button>
+    <div class="sec-body">
+      <div class="qci" data-key="hela">
+        <div class="qci-h"><span class="bt bt-he">HeLa QC</span></div>
+        <div class="fr"><label>NAME PREFIX</label><input type="text" class="qn" value="HeLaQC"></div>
+        <div class="fr"><label>SUFFIX / LABEL</label><input type="text" class="qs" value="RongQC_HeLa250pg"></div>
+        <div class="fr"><label>PLATE POSITION</label><input type="text" class="qp" value="B:A3"></div>
+        <div class="fr"><label>INJ VOL (µL)</label><input type="number" class="qv" value="1" step="0.5" min="0.1"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /sidebar -->
+
+<!-- ══════════ CONTENT ══════════ -->
+<div class="content">
+
+  <!-- Plate -->
+  <div class="card">
+    <div class="card-h">
+      🧫 Well Selection — Send to LCMS
+      <span id="selBadge" style="margin-left:auto;font-size:12px;font-weight:700;color:var(--accent)">0 selected</span>
+    </div>
+    <div class="card-b">
+      <div id="noMetaMsg" class="ibox">
+        ↑ Upload a metadata XLSX to show the plate map. Click wells or drag a rectangle to select wells to send to LCMS.
+      </div>
+      <div id="plateArea" style="display:none">
+        <div class="legend">
+          <div class="leg"><div class="leg-dot" style="background:var(--fin-bg);border-color:var(--fin-bd)"></div>Prep Finished</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--unf-bg);border-color:var(--unf-bd)"></div>Not Finished / Unknown</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--sel-bg);border-color:var(--sel-bd)"></div>Selected for LCMS</div>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-o btn-sm" onclick="selFinished()">✓ All Finished</button>
+          <button class="btn btn-o btn-sm" onclick="selAll()">✓ All</button>
+          <button class="btn btn-o btn-sm" onclick="selNone()">✗ Clear</button>
+          <button class="btn btn-o btn-sm" onclick="selInvert()">⇄ Invert</button>
+          <span style="margin-left:6px;margin-right:4px;font-size:10px;color:var(--text-muted)">Drag rect:</span>
+          <button id="rectSelBtn"  class="btn btn-sm" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="setRectMode('select')">＋ Select</button>
+          <button id="rectDeselBtn" class="btn btn-o btn-sm" onclick="setRectMode('deselect')">－ Deselect</button>
+          <span style="font-size:10px;color:var(--text-muted)">• Click well to toggle</span>
+          <button class="btn btn-o btn-sm" style="margin-left:auto" onclick="togglePastePanel()">📋 Paste TRUE/FALSE table</button>
+        </div>
+
+        <!-- Paste TRUE/FALSE panel -->
+        <div id="pastePanel" style="display:none;margin-bottom:10px;background:#fffbea;border:1px solid #f0d060;border-radius:7px;padding:11px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:11px;font-weight:700;color:#7c5e00">📋 Paste 16×24 Selection Table</span>
+            <span style="font-size:10px;color:#a07000">Rows = A–P (top→bottom), Columns = 1–24 (left→right). Accepts <strong>TRUE/FALSE</strong>, <strong>1/0</strong>, or <strong>YES/NO</strong>. Tab-separated — paste directly from Excel/Sheets.</span>
+          </div>
+          <textarea id="pasteTA" style="width:100%;height:90px;font-family:var(--font-mono);font-size:10px;border:1px solid #d0b040;border-radius:5px;padding:6px;background:#fff;resize:vertical;outline:none" placeholder="Paste tab-separated TRUE/FALSE table here (up to 16 rows × 24 cols)…"></textarea>
+          <div style="display:flex;gap:6px;margin-top:7px;align-items:center">
+            <button class="btn btn-sm" style="background:#7c5e00;color:#fff;border-color:#7c5e00" onclick="applyPasteTable('set')">Apply (replace selection)</button>
+            <button class="btn btn-o btn-sm" onclick="applyPasteTable('add')">＋ Add to selection</button>
+            <button class="btn btn-o btn-sm" onclick="applyPasteTable('remove')">－ Remove from selection</button>
+            <span id="pasteMsg" style="font-size:11px;color:var(--green);margin-left:4px"></span>
+          </div>
+        </div>
+        <div class="plate-outer" id="po"
+          onmousedown="rStart(event)"
+          onmousemove="rMove(event)"
+          onmouseup="rEnd(event)"
+          onmouseleave="rEnd(event)">
+          <div id="rsel"></div>
+          <div class="plate-grid" id="pg"></div>
+        </div>
+        <div class="srow" id="pstats"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview -->
+  <div class="card">
+    <div class="card-h">📋 Xcalibur Sequence Preview</div>
+    <div>
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('tbl')">Table</div>
+        <div class="tab" onclick="switchTab('sum')">Summary</div>
+        <div class="tab" onclick="switchTab('smp')">Samples</div>
+      </div>
+      <div id="tab-tbl" class="tp active">
+        <div id="noSeqMsg" class="ibox">Click ▶ Generate to build the sequence and preview it here.</div>
+        <div id="seqWrap" style="display:none" class="swrap">
+          <table class="stbl">
+            <thead><tr>
+              <th>#</th><th>Sample Type</th><th>File Name</th>
+              <th>Position</th><th>Inj Vol</th><th>Path (short)</th>
+            </tr></thead>
+            <tbody id="seqBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="tab-sum" class="tp">
+        <div id="sumContent" class="ibox">Generate the sequence first.</div>
+      </div>
+      <div id="tab-smp" class="tp">
+        <div id="smpContent" class="ibox">Generate the sequence first.</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content -->
+</div><!-- /layout -->
+
+<div id="toast"><span id="toastMsg"></span></div>
+
+<script>
+// ═══ STATE ═══════════════════════════════════════════════
+let metadata = [], mapped = [], selWells = new Set(), genRows = [];
+let expInfo = {experiment:'', date:''};
+let cWell='Well', cPrep='', cExp='', cDate='';
+let lastSeed = null; // seed used for last generation
+
+// ── Seeded PRNG (mulberry32) ──
+function mulberry32(seed){
+  return function(){
+    seed|=0; seed=seed+0x6D2B79F5|0;
+    let t=Math.imul(seed^seed>>>15,1|seed);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+
+// ═══ UI HELPERS ══════════════════════════════════════════
+function toast(msg, type='ok') {
+  const el=document.getElementById('toast');
+  el.className='show '+type;
+  document.getElementById('toastMsg').textContent=msg;
+  clearTimeout(toast._t);
+  toast._t=setTimeout(()=>el.className='',3200);
+}
+
+function toggleSec(btn) {
+  btn.classList.toggle('closed');
+  btn.nextElementSibling.classList.toggle('hidden');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const names=['tbl','sum','smp'];
+    t.classList.toggle('active', names[i]===name);
+  });
+  document.querySelectorAll('.tp').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));
+}
+
+function gv(id){return document.getElementById(id).value.trim();}
+
+// ═══ COLUMN MAPPING ══════════════════════════════════════
+function guess(cols, candidates) {
+  for(const c of candidates){
+    const f=cols.find(x=>x.toLowerCase().replace(/[_\s]/g,'')=== c.toLowerCase().replace(/[_\s]/g,''));
+    if(f) return f;
+  }
+  return '';
+}
+
+function buildMapper(cols) {
+  document.getElementById('mapper').style.display='block';
+  ['cWell','cPrep','cExp','cDate'].forEach(id=>{
+    const sel=document.getElementById(id);
+    const hasNone = id!=='cWell';
+    sel.innerHTML = hasNone?'<option value="">(none)</option>':'';
+    cols.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});
+  });
+  const wg = guess(cols,['Well','well','WELL','WellID','well_id','wellid']);
+  const pg = guess(cols,['sample_prep_finished','prep_finished','SamplePrepFinished','PrepFinished','finished','prep','Finished']);
+  const eg = guess(cols,['experiment','Experiment','exp','Exp','ExperimentName','experiment_name']);
+  const dg = guess(cols,['date','Date','DATE','rundate','run_date','RunDate']);
+  if(wg) document.getElementById('cWell').value=wg;
+  document.getElementById('cPrep').value=pg||'';
+  document.getElementById('cExp').value=eg||'';
+  document.getElementById('cDate').value=dg||'';
+}
+
+function remap() {
+  cWell=document.getElementById('cWell').value;
+  cPrep=document.getElementById('cPrep').value;
+  cExp=document.getElementById('cExp').value;
+  cDate=document.getElementById('cDate').value;
+  if(!cWell) return;
+
+  mapped=metadata.map(r=>{
+    const well=String(r[cWell]||'').trim();
+    let finished=false;
+    if(cPrep && r[cPrep]!==undefined && r[cPrep]!==''){
+      const s=String(r[cPrep]).toLowerCase().trim();
+      finished=(s==='true'||s==='1'||s==='yes');
+    }
+    return{...r,_w:well,_f:finished};
+  }).filter(r=>r._w);
+
+  if(mapped.length){
+    expInfo.experiment=cExp?(mapped[0][cExp]||''):'';
+    expInfo.date=cDate?(mapped[0][cDate]||''):'';
+  }
+
+  selWells=new Set();
+  if(cPrep){ mapped.forEach(r=>{if(r._f) selWells.add(r._w);}); }
+  else      { mapped.forEach(r=>selWells.add(r._w)); }
+
+  renderPlate();
+}
+
+// ═══ FILE LOAD ═══════════════════════════════════════════
+function doDrop(e){
+  e.preventDefault();
+  document.getElementById('dz').classList.remove('over');
+  if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+}
+function loadMeta(inp){if(inp.files[0]) processFile(inp.files[0]);}
+
+function processFile(file){
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const sn=wb.SheetNames.includes('metadata')?'metadata':wb.SheetNames[0];
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''});
+      if(!rows.length){toast('Sheet is empty','err');return;}
+      metadata=rows;
+      const cols=Object.keys(rows[0]);
+      document.getElementById('fi').style.display='flex';
+      document.getElementById('fn').textContent=`${file.name} — ${rows.length} rows, sheet: "${sn}"`;
+      document.getElementById('noMetaMsg').style.display='none';
+      document.getElementById('plateArea').style.display='block';
+      buildMapper(cols);
+      remap();
+      toast(`Loaded ${rows.length} wells`);
+    }catch(err){toast('Error: '+err.message,'err');}
+  };
+  r.readAsArrayBuffer(file);
+}
+
+// ═══ PLATE ═══════════════════════════════════════════════
+const ROWS='ABCDEFGHIJKLMNOP'.split('');
+
+function pWell(w){
+  const m=String(w).match(/^([A-Pa-p])(\d+)$/);
+  return m?{r:m[1].toUpperCase(),c:parseInt(m[2])}:null;
+}
+
+function renderPlate(){
+  const pg=document.getElementById('pg');
+  pg.innerHTML='';
+  if(!mapped.length) return;
+
+  const wmap={};
+  mapped.forEach(r=>wmap[r._w]=r);
+
+  let maxC=0,maxR=0;
+  mapped.forEach(r=>{const p=pWell(r._w);if(!p) return;maxC=Math.max(maxC,p.c);maxR=Math.max(maxR,ROWS.indexOf(p.r));});
+  if(!maxC){toast('Cannot parse well names (need e.g. A1)','err');return;}
+
+  const useR=ROWS.slice(0,maxR+1), useC=Array.from({length:maxC},(_,i)=>i+1);
+  pg.style.gridTemplateColumns=`26px repeat(${useC.length},26px)`;
+
+  mkCell(pg,'','hdr'); // corner
+  useC.forEach(c=>mkCell(pg,c,'hdr'));
+
+  useR.forEach(rl=>{
+    mkCell(pg,rl,'hdr');
+    useC.forEach(cn=>{
+      const w=rl+cn, d=wmap[w];
+      const el=document.createElement('div');
+      el.className='pc';
+      el.dataset.w=w;
+      if(!d){el.classList.add('unf','empty');}
+      else{
+        el.classList.add(d._f?'fin':'unf');
+        if(selWells.has(w)) el.classList.add('sel');
+        el.title=w+'\n'+Object.entries(d).filter(([k])=>!k.startsWith('_')).map(([k,v])=>k+': '+v).join('\n');
+        el.addEventListener('click',ev=>{ev.stopPropagation();toggleWell(w,el);});
+      }
+      pg.appendChild(el);
+    });
+  });
+
+  updateCount();
+  renderStats();
+}
+
+function mkCell(parent,text,cls){
+  const d=document.createElement('div');
+  d.className='pc '+(cls||'');
+  d.textContent=text;
+  parent.appendChild(d);
+}
+
+function toggleWell(w,el){
+  if(selWells.has(w)){selWells.delete(w);el.classList.remove('sel');}
+  else{selWells.add(w);el.classList.add('sel');}
+  updateCount();
+}
+
+function updateCount(){
+  document.getElementById('selBadge').textContent=selWells.size+' selected';
+  renderStats();
+}
+
+function renderStats(){
+  const tot=mapped.length, fin=mapped.filter(r=>r._f).length, sel=selWells.size;
+  document.getElementById('pstats').innerHTML=`
+    <div class="sc"><div class="v">${tot}</div><div class="l">Total Wells</div></div>
+    <div class="sc"><div class="v" style="color:var(--green)">${fin}</div><div class="l">Prep Finished</div></div>
+    <div class="sc"><div class="v" style="color:var(--accent)">${sel}</div><div class="l">To LCMS</div></div>
+    <div class="sc"><div class="v" style="color:var(--text-muted)">${tot-fin}</div><div class="l">Not Finished</div></div>`;
+}
+
+// ── Batch selection ──
+function selFinished(){ mapped.forEach(r=>{if(r._f) selWells.add(r._w);}); refreshCells(); }
+function selAll()     { mapped.forEach(r=>selWells.add(r._w)); refreshCells(); }
+function selNone()    { selWells.clear(); refreshCells(); }
+function selInvert()  { mapped.forEach(r=>{selWells.has(r._w)?selWells.delete(r._w):selWells.add(r._w);}); refreshCells(); }
+
+function refreshCells(){
+  document.querySelectorAll('#pg .pc[data-w]').forEach(c=>c.classList.toggle('sel',selWells.has(c.dataset.w)));
+  updateCount();
+}
+
+// ═══ RECTANGLE DRAG SELECT ═══════════════════════════════
+let rs=null; // rect state
+let rectMode='select'; // 'select' or 'deselect'
+
+function setRectMode(mode){
+  rectMode=mode;
+  document.getElementById('rectSelBtn').style.cssText=
+    mode==='select'?'background:var(--accent);color:#fff;border-color:var(--accent)':'';
+  document.getElementById('rectDeselBtn').style.cssText=
+    mode==='deselect'?'background:var(--purple);color:#fff;border-color:var(--purple)':'';
+  if(mode==='select'){
+    document.getElementById('rectSelBtn').className='btn btn-sm';
+    document.getElementById('rectDeselBtn').className='btn btn-o btn-sm';
+  } else {
+    document.getElementById('rectSelBtn').className='btn btn-o btn-sm';
+    document.getElementById('rectDeselBtn').className='btn btn-sm';
+  }
+}
+
+function rStart(ev){
+  const t=ev.target;
+  // only start drag on background (not on a well cell or header)
+  if(t.classList.contains('pc') && !t.classList.contains('hdr') && !t.classList.contains('empty')) return;
+  if(t.id==='rsel') return;
+  const po=document.getElementById('po');
+  const br=po.getBoundingClientRect();
+  rs={
+    x0: ev.clientX - br.left + po.scrollLeft,
+    y0: ev.clientY - br.top  + po.scrollTop,
+    desel: rectMode==='deselect', live: false
+  };
+  ev.preventDefault();
+}
+
+function rMove(ev){
+  if(!rs) return;
+  const po=document.getElementById('po');
+  const br=po.getBoundingClientRect();
+  const cx=ev.clientX - br.left + po.scrollLeft;
+  const cy=ev.clientY - br.top  + po.scrollTop;
+  if(!rs.live && Math.abs(cx-rs.x0)<3 && Math.abs(cy-rs.y0)<3) return;
+  rs.live=true;
+  const x1=Math.min(rs.x0,cx), y1=Math.min(rs.y0,cy);
+  const x2=Math.max(rs.x0,cx), y2=Math.max(rs.y0,cy);
+  const sel=document.getElementById('rsel');
+  sel.style.cssText=`display:block;left:${x1}px;top:${y1}px;width:${x2-x1}px;height:${y2-y1}px;`;
+
+  document.querySelectorAll('#pg .pc[data-w]').forEach(c=>{
+    if(c.classList.contains('empty')) return;
+    const cr=c.getBoundingClientRect();
+    const ccx=cr.left-br.left+po.scrollLeft+cr.width/2;
+    const ccy=cr.top -br.top +po.scrollTop +cr.height/2;
+    c.style.outline=(ccx>=x1&&ccx<=x2&&ccy>=y1&&ccy<=y2)?'2px solid var(--accent)':'';
+  });
+  ev.preventDefault();
+}
+
+function rEnd(ev){
+  if(!rs||!rs.live){rs=null;return;}
+  const po=document.getElementById('po');
+  const br=po.getBoundingClientRect();
+  const cx=ev.clientX===0&&ev.clientY===0?rs.x0:ev.clientX-br.left+po.scrollLeft;
+  const cy=ev.clientX===0&&ev.clientY===0?rs.y0:ev.clientY-br.top +po.scrollTop;
+  const x1=Math.min(rs.x0,cx), y1=Math.min(rs.y0,cy);
+  const x2=Math.max(rs.x0,cx), y2=Math.max(rs.y0,cy);
+
+  document.querySelectorAll('#pg .pc[data-w]').forEach(c=>{
+    c.style.outline='';
+    if(c.classList.contains('empty')) return;
+    const cr=c.getBoundingClientRect();
+    const ccx=cr.left-br.left+po.scrollLeft+cr.width/2;
+    const ccy=cr.top -br.top +po.scrollTop +cr.height/2;
+    if(ccx>=x1&&ccx<=x2&&ccy>=y1&&ccy<=y2){
+      const w=c.dataset.w;
+      rs.desel?(selWells.delete(w),c.classList.remove('sel')):(selWells.add(w),c.classList.add('sel'));
+    }
+  });
+
+  document.getElementById('rsel').style.display='none';
+  rs=null;
+  updateCount();
+}
+
+document.addEventListener('mouseup', ()=>{if(rs&&rs.live) rEnd({clientX:0,clientY:0});});
+
+// ═══ QC CONFIG ═══════════════════════════════════════════
+function getQC(key){
+  const el=document.querySelector(`.qci[data-key="${key}"]`);
+  return{key,name:el.querySelector('.qn').value.trim(),suffix:el.querySelector('.qs').value.trim(),
+         pos:el.querySelector('.qp').value.trim(),vol:parseFloat(el.querySelector('.qv').value)};
+}
+function setQC(key,q){
+  const el=document.querySelector(`.qci[data-key="${key}"]`);
+  if(!el) return;
+  el.querySelector('.qn').value=q.name||''; el.querySelector('.qs').value=q.suffix||'';
+  el.querySelector('.qp').value=q.pos||'';  el.querySelector('.qv').value=q.vol||1;
+}
+
+// ═══ SEQUENCE GENERATION ═════════════════════════════════
+function getDate(){ return (gv('dateOvr')||String(expInfo.date)).replace(/[^0-9]/g,'')||'00000000'; }
+function getExp(){  return gv('expOvr')||expInfo.experiment||'EXP'; }
+
+function mkRow(type,fn,pos,vol,path,instr){
+  return{'Sample Type':type,'File Name':fn,'Sample ID':1,'Path':path,'Instrument Method':instr,
+    'Process Method':'','Calibration File':'','Position':pos,'Inj Vol':vol,'Level':'',
+    'Sample Wt':0,'Sample Vol':0,'ISTD Amt':0,'Dil Factor':1,
+    'L1 Study':'','L2 Client':'','L3 Laboratory':'','L4 Company':'','L5 Phone':'','Comment':'','Sample Name':''};
+}
+
+function qcFN(date,short,qc,n){
+  const vs=String(qc.vol).replace('.','point');
+  return `${date}_OA_${qc.name}_${short}_${vs}uL_${qc.suffix}${n}`;
+}
+
+function sampleFN(date,short,volS,exp,well,batch,rc){
+  return `${date}_OA_Sa_${short}_${volS}uL_${exp}_${well}_${batch}_${rc}`;
+}
+
+function generateSequence(){
+  if(!mapped.length){toast('Upload metadata first','err');return;}
+  if(!selWells.size) {toast('No wells selected','err');return;}
+
+  const path=gv('dataPath'), instr=gv('instrMethod');
+  const short=gv('instrShort')||(instr.split('\\').pop()||instr);
+  const pp=gv('platePos'), iv=parseFloat(document.getElementById('injVol').value);
+  const batch=gv('batchLabel'), rc=gv('runCode');
+  const date=getDate(), exp=getExp();
+  const ivS=String(iv).replace('.','point');
+
+  // ── Determine seed ──
+  const seedInput=document.getElementById('randSeed').value.trim();
+  const seed=seedInput!==''?parseInt(seedInput):Math.floor(Math.random()*1e9);
+  lastSeed=seed;
+  document.getElementById('randSeed').value=seed; // always show the seed that was used
+  const rng=mulberry32(seed);
+
+  const blQ=getQC('blank'), bsQ=getQC('bsa'), heQ=getQC('hela');
+
+  const wmap={};
+  mapped.forEach(r=>wmap[r._w]=r);
+  const samples=Array.from(selWells).filter(w=>wmap[w])
+    .map(w=>({...wmap[w],_r:rng()})).sort((a,b)=>a._r-b._r);
+
+  const rows=[];
+  rows.push(mkRow('Blank', qcFN(date,short,blQ,1), blQ.pos, blQ.vol, path, instr));
+  rows.push(mkRow('QC',    qcFN(date,short,bsQ,1), bsQ.pos, bsQ.vol, path, instr));
+  rows.push(mkRow('QC',    qcFN(date,short,heQ,1), heQ.pos, heQ.vol, path, instr));
+  rows.push(mkRow('Blank', qcFN(date,short,blQ,2), blQ.pos, blQ.vol, path, instr));
+  samples.forEach(s=>rows.push(mkRow('Unknown',sampleFN(date,short,ivS,exp,s._w,batch,rc),`${pp}:${s._w}`,iv,path,instr)));
+  rows.push(mkRow('QC',    qcFN(date,short,heQ,2), heQ.pos, heQ.vol, path, instr));
+  rows.push(mkRow('Blank', qcFN(date,short,blQ,3), blQ.pos, blQ.vol, path, instr));
+
+  genRows=rows;
+  renderPreview(rows);
+  renderSummary(rows,samples.length,exp,date,gv('platePos'),iv,seed);
+  renderSampleTable(samples);
+  toast(`Generated ${rows.length} rows · seed ${seed}`);
+}
+
+function renderPreview(rows){
+  document.getElementById('noSeqMsg').style.display='none';
+  document.getElementById('seqWrap').style.display='block';
+  const tb=document.getElementById('seqBody');
+  tb.innerHTML='';
+  rows.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    tr.className=r['Sample Type']==='Blank'?'t-bl':r['Sample Type']==='QC'?'t-qc':'t-un';
+    const ps=(r['Path']||'').split('\\').slice(-2).join('\\');
+    tr.innerHTML=`<td class="rn">${i+1}</td><td>${r['Sample Type']}</td>
+      <td title="${r['File Name']}">${r['File Name']}</td>
+      <td><code>${r['Position']}</code></td><td>${r['Inj Vol']}</td>
+      <td title="${r['Path']}" style="color:var(--text-muted)">…${ps}</td>`;
+    tb.appendChild(tr);
+  });
+  switchTab('tbl');
+}
+
+function renderSummary(rows,ns,exp,date,pp,iv,seed){
+  const bl=rows.filter(r=>r['Sample Type']==='Blank').length;
+  const qc=rows.filter(r=>r['Sample Type']==='QC').length;
+  const mtVal=document.getElementById('methodTime').value.trim();
+  const mt=mtVal&&parseFloat(mtVal)>0?parseFloat(mtVal):null;
+  const timeStr=mt!=null?(()=>{
+    const tot=Math.round(rows.length*mt);
+    const d=Math.floor(tot/1440);
+    const h=Math.floor((tot%1440)/60);
+    const m=tot%60;
+    const dhm=(d>0?`${d}d `:'')+(h>0?`${h}h `:'')+(m>0?`${m}min`:'');
+    const totalH=(tot/60).toFixed(1);
+    return `${dhm} (${totalH} h total · ${mt} min/run × ${rows.length} rows)`;
+  })():'';
+
+  const seedHtml=seed!=null
+    ?`<strong>Random seed:</strong> <code style="font-size:12px;user-select:all">${seed}</code> — paste into the Seed field to reproduce this exact order<br>`
+    :'';
+
+  document.getElementById('sumContent').innerHTML=`
+    <div class="srow" style="margin-bottom:12px">
+      <div class="sc"><div class="v">${rows.length}</div><div class="l">Total Rows</div></div>
+      <div class="sc"><div class="v" style="color:var(--accent)">${ns}</div><div class="l">Samples</div></div>
+      <div class="sc"><div class="v" style="color:var(--green)">${qc}</div><div class="l">QC Runs</div></div>
+      <div class="sc"><div class="v" style="color:var(--purple)">${bl}</div><div class="l">Blanks</div></div>
+    </div>
+    <div class="ibox">
+      <strong>Order:</strong> Blank → BSA → HeLa → Blank → ${ns} randomised samples → HeLa → Blank<br>
+      ${timeStr?`<strong>Est. run time:</strong> ${timeStr}<br>`:''}
+      <strong>Experiment:</strong> ${exp} &nbsp;|&nbsp; <strong>Date:</strong> ${date}<br>
+      <strong>Plate:</strong> ${pp} &nbsp;|&nbsp; <strong>Sample Inj Vol:</strong> ${iv} µL<br>
+      ${seedHtml}
+    </div>`;
+}
+
+// ── Shared helper: compute condition columns + groups from a samples array ──
+function buildSampleGroups(samples){
+  const EXCLUDE_PATTERNS=[
+    /^well$/i, /^well[_\s]?id$/i, /^well[_\s]?name$/i,
+    /^row$/i, /^col(umn)?$/i,
+    /^finished$/i, /^prep[_\s]?finished$/i, /^sample[_\s]?prep/i,
+    /^file[_\s]?name$/i, /^filename$/i,
+    /^experiment[_\s]?(name)?$/i, /^exp(name)?$/i,
+    /^date$/i, /^run[_\s]?date$/i,
+    /^sample[_\s]?id$/i, /^sampleid$/i,
+  ];
+  const mappedExclude=new Set([cWell,cPrep,cExp,cDate].filter(Boolean));
+  const allCols=Object.keys(samples[0]).filter(k=>!k.startsWith('_'));
+  const condCols=allCols.filter(k=>{
+    if(mappedExclude.has(k)) return false;
+    return !EXCLUDE_PATTERNS.some(re=>re.test(k));
+  });
+
+  const groupMap=new Map();
+  samples.forEach(s=>{
+    const vals=condCols.map(c=>String(s[c]??''));
+    const key=vals.join('\x00');
+    if(!groupMap.has(key)) groupMap.set(key,{vals,wells:[],finCount:0});
+    const g=groupMap.get(key);
+    g.wells.push(s._w);
+    if(s._f) g.finCount++;
+  });
+
+  const groups=[...groupMap.values()].sort((a,b)=>{
+    for(let i=0;i<a.vals.length;i++){
+      const c=a.vals[i].localeCompare(b.vals[i],undefined,{numeric:true});
+      if(c!==0) return c;
+    }
+    return 0;
+  });
+  return {condCols,groups};
+}
+
+function renderSampleTable(samples){
+  const el=document.getElementById('smpContent');
+  if(!samples||!samples.length){
+    el.innerHTML='<div class="ibox">No samples selected.</div>';
+    return;
+  }
+
+  const {condCols,groups}=buildSampleGroups(samples);
+
+  // ── Overall stat badges ──
+  const finCount=samples.filter(s=>s._f).length;
+  const notFinCount=samples.length-finCount;
+  const statsHtml=`<div class="srow" style="margin-bottom:0">
+    <div class="sc"><div class="v" style="color:var(--accent)">${samples.length}</div><div class="l">Total to LCMS</div></div>
+    <div class="sc"><div class="v" style="color:var(--green)">${finCount}</div><div class="l">Prep Finished</div></div>
+    ${notFinCount>0?`<div class="sc"><div class="v" style="color:var(--text-muted)">${notFinCount}</div><div class="l">Not Finished</div></div>`:''}
+  </div>`;
+
+  // ── If no condition columns survive, just show stat badges + flat well list ──
+  if(!condCols.length){
+    const pp=gv('platePos');
+    const wellList=samples.map(s=>`<code style="margin:1px;display:inline-block">${pp}:${s._w}</code>`).join(' ');
+    el.innerHTML=`<div style="margin-bottom:12px">${statsHtml}</div>
+      <div class="ibox" style="font-size:11px">No condition columns detected (all columns are identity/positional).<br><br>${wellList}</div>`;
+    return;
+  }
+
+  // ── Replicate count colour scale ──
+  const counts=groups.map(g=>g.wells.length);
+  const maxN=Math.max(...counts);
+  const minN=Math.min(...counts);
+  function repColour(n){
+    if(n===1) return '#cf222e';
+    if(n<minN+(maxN-minN)*0.4) return '#9a6700';
+    return '#1a7f37';
+  }
+
+  const condThs=condCols.map(c=>`<th>${c}</th>`).join('');
+  const pp=gv('platePos');
+  const tableRows=groups.map((g,i)=>{
+    const n=g.wells.length;
+    const col=repColour(n);
+    const finBadge=g.finCount===n
+      ?`<span style="color:var(--green);font-size:10px">all ✓</span>`
+      :g.finCount===0
+        ?`<span style="color:var(--text-muted);font-size:10px">none</span>`
+        :`<span style="color:#9a6700;font-size:10px">${g.finCount}/${n}</span>`;
+    const wellPills=g.wells.map(w=>`<code style="margin:1px 2px 1px 0;display:inline-block">${pp}:${w}</code>`).join('');
+    const condTds=g.vals.map(v=>`<td>${v||'<span style="color:var(--text-muted);font-style:italic">—</span>'}</td>`).join('');
+    return `<tr>
+      <td class="rn">${i+1}</td>
+      ${condTds}
+      <td style="text-align:center">
+        <span style="font-size:16px;font-weight:700;font-family:var(--font-mono);color:${col}">${n}</span>
+      </td>
+      <td style="text-align:center">${finBadge}</td>
+      <td style="white-space:normal;line-height:1.6">${wellPills}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Balance warning ──
+  let balanceHtml='';
+  if(minN!==maxN){
+    balanceHtml=`<div style="background:#fff8e1;border:1px solid #f0d060;border-radius:6px;padding:7px 11px;font-size:11px;color:#7c5e00;margin-bottom:10px">
+      ⚠ Unbalanced replicates — group sizes range from <strong>${minN}</strong> to <strong>${maxN}</strong>
+    </div>`;
+  } else {
+    balanceHtml=`<div style="background:var(--green-light);border:1px solid var(--green-border);border-radius:6px;padding:7px 11px;font-size:11px;color:var(--green);margin-bottom:10px">
+      ✓ Balanced — all ${groups.length} conditions have <strong>${maxN}</strong> replicate${maxN>1?'s':''}
+    </div>`;
+  }
+
+  el.innerHTML=`
+    <div style="margin-bottom:10px">${statsHtml}</div>
+    ${balanceHtml}
+    <div class="swrap" style="max-height:420px">
+      <table class="stbl">
+        <thead><tr>
+          <th>#</th>${condThs}
+          <th style="text-align:center">Replicates</th>
+          <th style="text-align:center">Finished</th>
+          <th>Wells</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ═══ EXPORTS ═════════════════════════════════════════════
+const XCAL_COLS=['Sample Type','File Name','Sample ID','Path','Instrument Method',
+  'Process Method','Calibration File','Position','Inj Vol','Level',
+  'Sample Wt','Sample Vol','ISTD Amt','Dil Factor',
+  'L1 Study','L2 Client','L3 Laboratory','L4 Company','L5 Phone','Comment','Sample Name'];
+
+function exportCSV(){
+  if(!genRows.length){generateSequence();if(!genRows.length) return;}
+  const esc=v=>{const s=v===null||v===undefined?'':String(v);return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;};
+  const lines=['Bracket Type=4', XCAL_COLS.map(esc).join(',')];
+  genRows.forEach(r=>lines.push(XCAL_COLS.map(c=>esc(r[c]??'')).join(',')));
+  const blob=new Blob([lines.join('\r\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`${getDate()}_${getExp()}_Xcaliber_seqeunce.csv`;
+  a.click();
+  toast('CSV exported');
+}
+
+function exportXLSX(){
+  if(!genRows.length){generateSequence();if(!genRows.length) return;}
+  const wb=XLSX.utils.book_new();
+
+  // Sheet 1: Xcaliber_seqeunce
+  const d1=[['Bracket Type=4'],XCAL_COLS];
+  genRows.forEach(r=>d1.push(XCAL_COLS.map(c=>r[c]??'')));
+  const ws1=XLSX.utils.aoa_to_sheet(d1);
+  ws1['!cols']=[{wch:12},{wch:65},{wch:10},{wch:45},{wch:80},{wch:12},{wch:14},{wch:10},{wch:8},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:10},{wch:10},{wch:14},{wch:12},{wch:10},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Xcaliber_seqeunce');
+
+  // Sheet 2: wells_to_lcms
+  const pp=gv('platePos'), iv=parseFloat(document.getElementById('injVol').value);
+  const path=gv('dataPath'), instr=gv('instrMethod');
+  const short=gv('instrShort')||(instr.split('\\').pop()||instr);
+  const batch=gv('batchLabel'), rc=gv('runCode');
+  const date=getDate(), exp=getExp();
+  const ivS=String(iv).replace('.','point');
+
+  const wmap={};
+  mapped.forEach(r=>wmap[r._w]=r);
+  const origCols=metadata.length?Object.keys(metadata[0]).filter(k=>!k.startsWith('_')):[];
+  const w2lH=['well','Position','Inj Vol','Path','Instrument Method','File Name','randomize_index',...origCols];
+  const w2lD=[w2lH];
+  let ri=0;
+  genRows.filter(r=>r['Sample Type']==='Unknown').forEach(r=>{
+    const well=r['Position'].split(':')[1]||'';
+    const orig=wmap[well]||{};
+    w2lD.push([well,r['Position'],iv,path,instr,r['File Name'],ri/(genRows.length||1),...origCols.map(k=>orig[k]??'')]);
+    ri++;
+  });
+  const ws2=XLSX.utils.aoa_to_sheet(w2lD);
+  ws2['!cols']=w2lH.map(()=>({wch:20}));
+  XLSX.utils.book_append_sheet(wb,ws2,'wells_to_lcms');
+
+  // Sheet 3: Selected_Wells_384 — 16×24 grid of 1/0
+  const PLATE_ROWS='ABCDEFGHIJKLMNOP'.split('');
+  const PLATE_COLS=Array.from({length:24},(_,i)=>i+1);
+  // header row: blank corner + col numbers 1–24
+  const plateData=[['',...PLATE_COLS]];
+  PLATE_ROWS.forEach(r=>{
+    plateData.push([r,...PLATE_COLS.map(c=>selWells.has(r+c)?1:0)]);
+  });
+  const ws_plate=XLSX.utils.aoa_to_sheet(plateData);
+  // narrow cols: row-label col + 24 well cols
+  ws_plate['!cols']=[{wch:4},...PLATE_COLS.map(()=>({wch:4}))];
+  XLSX.utils.book_append_sheet(wb,ws_plate,'Selected_Wells_384');
+
+  // Sheet 4: Settings
+  const sD=[['Setting','Value'],
+    ['Data Path',gv('dataPath')],['Instrument Method',gv('instrMethod')],
+    ['Instrument Short Name',short],['Plate Position',pp],
+    ['Sample Inj Vol (µL)',iv],['Batch Label',gv('batchLabel')],['Run Code',rc],
+    ['Experiment Name',exp],['Date',date],
+    ['LCMS Method Time (min)',gv('methodTime')||'(not set)'],
+    ['Wells Selected',selWells.size],['Total Sequence Rows',genRows.length],
+    ['Randomization Seed',lastSeed!=null?lastSeed:'(not recorded)'],
+    ['Generated',new Date().toLocaleString()],
+    ['--- QC Config ---',''],
+    ...['blank','bsa','hela'].flatMap(k=>{const q=getQC(k);return[
+      [k+' Name',q.name],[k+' Suffix',q.suffix],[k+' Position',q.pos],[k+' Inj Vol',q.vol]];})
+  ];
+  const ws3=XLSX.utils.aoa_to_sheet(sD);
+  ws3['!cols']=[{wch:25},{wch:80}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Settings');
+
+  // Sheet 5: Summary
+  const bl=genRows.filter(r=>r['Sample Type']==='Blank').length;
+  const qc=genRows.filter(r=>r['Sample Type']==='QC').length;
+  const ns=genRows.filter(r=>r['Sample Type']==='Unknown').length;
+  const mtVal=document.getElementById('methodTime').value.trim();
+  const mt=mtVal&&parseFloat(mtVal)>0?parseFloat(mtVal):null;
+  let timeRows=[];
+  if(mt!=null){
+    const tot=Math.round(genRows.length*mt);
+    const dd=Math.floor(tot/1440), hh=Math.floor((tot%1440)/60), mm=tot%60;
+    const dhm=(dd>0?`${dd}d `:'')+(hh>0?`${hh}h `:'')+(mm>0?`${mm}min`:'');
+    timeRows=[
+      ['LCMS Method Time (min/run)', mt],
+      ['Estimated Total Run Time', `${dhm} (${(tot/60).toFixed(1)} h)`],
+    ];
+  }
+  const sumD=[
+    ['=== SEQUENCE SUMMARY ===',''],
+    ['',''],
+    ['Total Rows', genRows.length],
+    ['Unknown Samples', ns],
+    ['QC Runs', qc],
+    ['Blanks', bl],
+    ['',''],
+    ['Run Order', 'Blank → BSA QC → HeLa QC → Blank → samples (randomised) → HeLa QC → Blank'],
+    ['Experiment', exp],
+    ['Date', date],
+    ['Plate Position', pp],
+    ['Sample Inj Vol (µL)', iv],
+    ['Randomization Seed', lastSeed!=null?lastSeed:'(not recorded)'],
+    ...timeRows,
+  ];
+  const ws4=XLSX.utils.aoa_to_sheet(sumD);
+  ws4['!cols']=[{wch:30},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,ws4,'Summary');
+
+  // Sheet 6: Sample_Summary (grouped replicates)
+  const smpSamples=genRows
+    .filter(r=>r['Sample Type']==='Unknown')
+    .map(r=>{ const w=r['Position'].split(':')[1]||''; const orig=(mapped.find(m=>m._w===w)||{}); return {...orig,_w:w,_f:orig._f||false}; });
+
+  if(smpSamples.length){
+    const {condCols,groups}=buildSampleGroups(smpSamples);
+    const counts=groups.map(g=>g.wells.length);
+    const maxN=counts.length?Math.max(...counts):0;
+    const minN=counts.length?Math.min(...counts):0;
+    const balanced=minN===maxN;
+
+    const ss5Header=[...condCols,'Replicates','Prep Finished','Wells'];
+    const ss5Data=[
+      ['=== SAMPLE SUMMARY — REPLICATE GROUPS ==='],
+      [`Grouped by: ${condCols.length?condCols.join(', '):'(no condition columns)'}`],
+      [balanced
+        ?`✓ Balanced — all ${groups.length} conditions have ${maxN} replicate(s)`
+        :`⚠ Unbalanced — replicate counts range from ${minN} to ${maxN}`],
+      [],
+      ss5Header,
+      ...groups.map((g,i)=>[
+        ...g.vals,
+        g.wells.length,
+        `${g.finCount}/${g.wells.length}`,
+        g.wells.map(w=>`${pp}:${w}`).join(', ')
+      ])
+    ];
+    const ws5=XLSX.utils.aoa_to_sheet(ss5Data);
+    // col widths: condition cols + fixed last 3
+    ws5['!cols']=[...condCols.map(()=>({wch:20})),{wch:12},{wch:14},{wch:60}];
+    XLSX.utils.book_append_sheet(wb,ws5,'Sample_Summary');
+  }
+
+  XLSX.writeFile(wb,`${date}_${exp}_xcalibur_sequence.xlsx`);
+  toast('XLSX exported (6 sheets)');
+}
+
+// ═══ SESSION ═════════════════════════════════════════════
+function saveSession(){
+  const s={version:4,expInfo,metadata,mapped,selectedWells:Array.from(selWells),
+    colMapping:{cWell,cPrep,cExp,cDate},
+    settings:{dataPath:gv('dataPath'),instrMethod:gv('instrMethod'),instrShort:gv('instrShort'),
+      platePos:gv('platePos'),injVol:document.getElementById('injVol').value,
+      batchLabel:gv('batchLabel'),runCode:gv('runCode'),expOvr:gv('expOvr'),dateOvr:gv('dateOvr'),
+      methodTime:document.getElementById('methodTime').value,
+      randSeed:document.getElementById('randSeed').value},
+    qc:['blank','bsa','hela'].map(k=>getQC(k)),
+    genRows, lastSeed
+  };
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(s)],{type:'application/json'}));
+  a.download=`${getDate()}_${getExp()}_xcaliber_generating_session.json`;
+  a.click();
+  toast('Session saved');
+}
+
+function loadSession(inp){
+  const file=inp.files[0];if(!file) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const s=JSON.parse(ev.target.result);
+      expInfo=s.expInfo||{};
+      metadata=s.metadata||[];
+      mapped=s.mapped||[];
+      selWells=new Set(s.selectedWells||[]);
+
+      if(s.colMapping){cWell=s.colMapping.cWell||'Well';cPrep=s.colMapping.cPrep||'';cExp=s.colMapping.cExp||'';cDate=s.colMapping.cDate||'';}
+
+      if(s.settings){
+        const st=s.settings;
+        ['dataPath','instrMethod','instrShort','platePos','batchLabel','runCode','expOvr','dateOvr','methodTime','randSeed'].forEach(id=>{if(st[id]!==undefined) document.getElementById(id).value=st[id];});
+        if(st.injVol) document.getElementById('injVol').value=st.injVol;
+      }
+      if(s.qc) s.qc.forEach(q=>setQC(q.key,q));
+
+      if(metadata.length){
+        buildMapper(Object.keys(metadata[0]));
+        document.getElementById('cWell').value=cWell;
+        document.getElementById('cPrep').value=cPrep;
+        document.getElementById('cExp').value=cExp;
+        document.getElementById('cDate').value=cDate;
+      }
+      if(mapped.length){
+        document.getElementById('fi').style.display='flex';
+        document.getElementById('fn').textContent='(from session)';
+        document.getElementById('noMetaMsg').style.display='none';
+        document.getElementById('plateArea').style.display='block';
+        renderPlate();
+      }
+
+      // Restore previously generated sequence
+      if(s.genRows&&s.genRows.length){
+        genRows=s.genRows;
+        lastSeed=s.lastSeed??null;
+        const restoredSamples=genRows
+          .filter(r=>r['Sample Type']==='Unknown')
+          .map(r=>{ const w=r['Position'].split(':')[1]||''; const orig=(mapped.find(m=>m._w===w)||{}); return {...orig,_w:w,_f:orig._f||false}; });
+        const exp=getExp(), date=getDate(), pp=gv('platePos'), iv=parseFloat(document.getElementById('injVol').value);
+        renderPreview(genRows);
+        renderSummary(genRows,restoredSamples.length,exp,date,pp,iv,lastSeed);
+        renderSampleTable(restoredSamples);
+        toast('Session loaded · previous sequence restored');
+      } else {
+        toast('Session loaded');
+      }
+    }catch(err){toast('Load error: '+err.message,'err');}
+  };
+  r.readAsText(file);
+  inp.value='';
+}
+// ═══ PASTE TRUE/FALSE TABLE ══════════════════════════════
+function togglePastePanel(){
+  const p=document.getElementById('pastePanel');
+  p.style.display=p.style.display==='none'?'block':'none';
+}
+
+function applyPasteTable(mode){
+  const raw=document.getElementById('pasteTA').value.trim();
+  if(!raw){document.getElementById('pasteMsg').textContent='⚠ Nothing pasted';return;}
+
+  const ROWS_ORDER='ABCDEFGHIJKLMNOP'.split('');
+  const lines=raw.split(/\r?\n/).filter(l=>l.trim());
+  let applied=0, skipped=0;
+
+  if(mode==='set') selWells.clear();
+
+  lines.forEach((line,ri)=>{
+    if(ri>=16) return; // max 16 rows (A–P)
+    const row=ROWS_ORDER[ri];
+    const cells=line.split('\t');
+    cells.forEach((val,ci)=>{
+      if(ci>=24) return; // max 24 cols
+      const col=ci+1;
+      const well=row+col;
+      // find if well exists in mapped
+      const exists=mapped.some(r=>r._w===well);
+      if(!exists){skipped++;return;}
+      const v=val.trim().toUpperCase();
+      const isTrue=v==='TRUE'||v==='1'||v==='YES';
+      const isFalse=v==='FALSE'||v==='0'||v==='NO';
+      if(isTrue){
+        if(mode==='remove') selWells.delete(well);
+        else selWells.add(well);
+        applied++;
+      } else if(isFalse){
+        if(mode==='add') {/* add mode: FALSE means do nothing */}
+        else selWells.delete(well);
+        applied++;
+      }
+    });
+  });
+
+  refreshCells();
+  const msg=`✓ Applied ${applied} wells${skipped?' ('+skipped+' skipped — not in plate)':''}`;
+  document.getElementById('pasteMsg').textContent=msg;
+  toast(msg);
+}
+
+// ═══ DOWNLOAD ALL ═════════════════════════════════════════
+async function downloadAll(){
+  if(!genRows.length){generateSequence();if(!genRows.length) return;}
+  toast('Downloading all files…','inf');
+  // small delay between triggers so browser doesn't block
+  exportXLSX();
+  await new Promise(r=>setTimeout(r,400));
+  exportCSV();
+  await new Promise(r=>setTimeout(r,400));
+  saveSession();
+  toast('All files downloaded (XLSX + CSV + Session)');
+}
+</script>
